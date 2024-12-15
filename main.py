@@ -5,6 +5,7 @@ import deck
 import itertools
 import json
 import logging
+import math
 import os.path
 import requests
 import time
@@ -54,6 +55,7 @@ class ClusterEngine:
     def cluster_upgma(self):
         # Auto-cluster any identical decks
         print("Auto-clustering identical decks...")
+        original_size = len(self.decks_and_clusters)
         deck_contents_cache = {}
         for key, deck in self.decks_and_clusters.items():
             if deck.contents_hash() not in deck_contents_cache:
@@ -62,14 +64,18 @@ class ClusterEngine:
                 deck_contents_cache[deck.contents_hash()] = deck_contents_cache[deck.contents_hash()] + deck
 
         self.decks_and_clusters = {d.id: d for d in deck_contents_cache.values()}
+        print(f"Identical decks clustered. (Reduced from {original_size} to {len(self.decks_and_clusters)} decks)")
 
         # UPGMA
 
         # Initial similarity matrix build
+        total_combinations = math.comb(len(self.decks_and_clusters), 2)
         print("Building initial similarity matrix...")
         for d1, d2 in itertools.combinations(self.decks_and_clusters.values(), 2):
             similarity = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
             self.similarities[(d1.id, d2.id)] = similarity
+            print(f"  Calculating similarity for {d1.id.ljust(32)} and {d2.id.ljust(32)} (Progress: {len(self.similarities)}/{total_combinations})", end="\r")
+        print("\nSimilarity matrix built.")
 
         self._update_most_similar_pair()
 
@@ -80,7 +86,7 @@ class ClusterEngine:
             d2 = self.decks_and_clusters.get(self.most_similar_pair[1])
             cluster = d1 + d2
 
-            print(f"  Merging decks... (Current similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")})", end="\r")
+            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Current similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")})", end="\r")
 
             # Remove the old decks/clusters from the deck list
             self.decks_and_clusters.pop(d1.id)
