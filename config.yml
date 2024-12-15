@@ -1,0 +1,12 @@
+TOURNAMENT_LIST: tournaments_2024-12-15.json
+TOURNAMENT_FORMAT_FILTER: "standard_f-h"
+# TOURNAMENT_FORMAT_FILTER: "test_tod_regionals"
+TOURNAMENT_MIN_PLAYERS: 64
+
+# Valid range: 0 - 0.5 (only identical decks)
+CLUSTER_SIMILARITY_THRESHOLD: 0.25
+CLUSTER_METHOD: "get_deck_inclusion_weighted_Jaccard"
+# Minimum number of decks
+ROGUE_DECK_THRESHOLD: 64
+#ROGUE_DECK_THRESHOLD: 5
+REPORT_DECIMAL_ROUNDING: 2

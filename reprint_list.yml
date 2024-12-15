@@ -1,0 +1,44 @@
+# This file normalizes reprints to all be the same, minimum rarity printing. Only necessary for Pokémon.
+# In most cases, this will be the earliest printing.
+# Format:
+# Reprint card name: Normalized card name
+
+Squawkabilly ex SVP 160: Squawkabily ex PAL 169
+Squawkabilly ex PR-SV 160: Squawkabily ex PAL 169
+Tinkaton ex PAL 240: Tinkaton ex PR-SV 31
+Pineco PAF 1: Pineco PAL 4
+Forretress ex PAF 2: Forretress ex PAL 5
+Toedscool PAF 4: Toedscool SVI 24
+Toedscruel ex PAF 5: Toedscruel ex OBF 22
+Charmander PAF 7: Charmander MEW 4
+Charcadet PAF 14: Charcadet SVI 40
+Armarouge PAF 15: Armarouge SVI 41
+Natu PAF 25: Natu PAR 71
+Xatu PAF 26: Xatu PAR 72
+Ralts PAF 27: Ralts SVI 84
+Kirlia PAF 28: Kirlia SVI 85
+Gardevoir ex PAF 29: Gardevoir ex SVI 86
+Mimikyu PAF 37: Mimikyu PAL 97
+Fidough PAF 38: Fidough SVI 97
+Dachsbun PAF 39: Dachsbun SVI 99
+Mankey PAF 46: Mankey SVI 107
+Primeape PAF 47: Primeape SVI 108
+Annihilape PAF 47: Annihilape SVI 109
+Charizard ex PAF 54: Charizard ex OBF 125
+Paldean Wooper PAF 58: Paldean Wooper PAL 128
+Paldean Clodsire ex PAF 59: Paldean Clodsire ex PAL 130
+Revavroom PAF 65: Revavroom SVI 142
+Noibat PAF 68: Noibat PAL 152
+Noivern ex PAF 69: Noivern ex PAL 153
+Squawkabilly ex PAF 75: Squawkabily ex PAL 169
+Radiant Charizard CRZ 20: Radiant Charizard PGO 11
+Rotom V CRZ 45: Rotom V LOR 58
+Mew V CRZ 60: Mew V FST 113
+Rayquaza V CRZ 100: Rayquaza V EVS 110
+Rayquaza VMAX CRZ 101: Rayquaza V EVS 111
+Rayquaza VMAX CRZ 102: Rayquaza V EVS 111
+Duraludon V CRZ 103: Duraludon V EVS 122
+Duraludon VMAX CRZ 104: Duraludon VMAX EVS 123
+Ditto CRZ 107: Ditto PGO 53
+Venusaur ex SCR 1: Venusaur ex MEW 3
+Blastoise ex SCR 30: Blastoise ex MEW 9

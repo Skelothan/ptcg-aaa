@@ -1,0 +1,6 @@
+api.yml
+.DS_Store
+__pycache__/*
+data/*
+raw_data/*
+reports/*
