@@ -6,6 +6,7 @@ import itertools
 import json
 import logging
 import math
+import multiprocessing
 import os.path
 import requests
 import threading
@@ -46,13 +47,6 @@ class ClusterEngine:
         self.decks_and_clusters = copy.copy(decks)
         self.similarities = {}
 
-        self.similarities_to_calc = []
-        self.stc_lock = threading.Lock()
-        self.similarities_empty = True
-        self.similarities_calc_count = 0
-        self.similarities_total_count = 0
-        
-
         self.greatest_similarity = -1
         self.most_similar_pair = tuple()
 
@@ -73,54 +67,58 @@ class ClusterEngine:
         self.decks_and_clusters = {d.id: d for d in deck_contents_cache.values()}
         print(f"Identical decks clustered. (Reduced from {original_size} to {len(self.decks_and_clusters)} decks)")
 
-    def _get_next_similarity(self):
-        self.similarities_calc_count += 1
-        print(f"  Progress: {self.similarities_calc_count}/{self.similarities_total_count}", end="\r")
-        return next(self.similarities_to_calc, None)
-    
-    # def _increment_similarity_calc_count(self):
-    #     with self.count_lock:
-    #         self.similarities_calc_count += 1
-    #         print(f"  Progress: {len(self.similarities)}/{self.similarities_total_count}", end="\r")
-
-    def _compute_similarities(self, output: dict[tuple[int, int]: float]):
+    def _compute_similarities(self, tasks: multiprocessing.Queue, output: multiprocessing.Queue):
         while True:
-            pair = self._get_next_similarity()
-            if pair == None:
+            pair = tasks.get(timeout=1)
+            if pair is None:
+                output.put(None)
                 break
             d1, d2 = pair
             similarity = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
-            output[(d1.id, d2.id)] = similarity
+            output.put(((d1.id, d2.id), similarity))
 
     def _build_initial_similarity_matrix(self):
         start_time = datetime.now()
         print("Building initial similarity matrix...")
 
-        self.similarities_calc_count = 0
-        self.similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
-        self.similarities_to_calc = itertools.combinations(self.decks_and_clusters.values(), 2)
-        self.similarities_empty = False
+        similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
+        similarities_to_calc = itertools.combinations(self.decks_and_clusters.values(), 2)
 
-        # batch_size = math.ceil(total_combinations / 8)
-        # batches = itertools.batched(similarities_to_calc, batch_size)
-        threads = []
-        outputs = []
+        manager = multiprocessing.Manager()
+        tasks = manager.Queue()
+        outputs = manager.Queue()
 
-        thread_count = 0
-        # for batch in batches:
+        processes = []
         for _ in range(CONFIG.get("NUM_THREADS")):
-            thread_count += 1
-            output = {}
-            outputs.append(output)
-            thread = threading.Thread(target=self._compute_similarities, name=f"Thread {thread_count}", args=(output,))
-            threads.append(thread)
-            thread.start()
+            process = multiprocessing.Process(target=self._compute_similarities, args=(tasks, outputs))
+            processes.append(process)
+            process.start()
 
-        for thread in threads:
-            thread.join()
-        
-        for output in outputs:
-            self.similarities.update(output)
+        num_tasks_queued = 0
+        for pair in similarities_to_calc:
+            tasks.put(pair)
+            num_tasks_queued += 1
+            print(f"  Added {pair[0].id.ljust(32)} and {pair[1].id.ljust(32)} to the queue (Progress: {num_tasks_queued}/{similarities_total_count})", end="\r")
+        print("")
+        stop_signals_queued = 0
+        for signal in [None] * CONFIG.get("NUM_THREADS"):
+            tasks.put(signal)
+            stop_signals_queued += 1
+            print(f"  Added a stop signal to the queue (Progress: {stop_signals_queued}/{CONFIG.get("NUM_THREADS")})", end="\r")
+        print("")
+
+        num_finished_processes = 0
+        num_outputs_received = 0
+        while True:
+            output = outputs.get()
+            if output is None:
+                num_finished_processes += 1
+                if num_finished_processes >= CONFIG.get("NUM_THREADS"):
+                    break
+            else:
+                num_outputs_received += 1
+                print(f"  Calculated similarity for {output[0][0].ljust(32)} and {output[0][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
+                self.similarities[output[0]] = output[1]
 
         end_time = datetime.now()
         print(f"\nSimilarity matrix built. (Time taken: {(end_time - start_time)})")
@@ -130,13 +128,18 @@ class ClusterEngine:
     def _do_upgma(self):
         start_time = datetime.now()
         print("Beginning clustering of decks with UPGMA method...")
+
+        manager = multiprocessing.Manager()
+        tasks = manager.Queue()
+        outputs = manager.Queue()
+
         while self.greatest_similarity > CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD"):
             # Merge the two most similar decks/clusters
             d1 = self.decks_and_clusters.get(self.most_similar_pair[0])
             d2 = self.decks_and_clusters.get(self.most_similar_pair[1])
             cluster = d1 + d2
 
-            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Current similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")})")
+            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Current similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")})", end="\r")
 
             # Remove the old decks/clusters from the deck list
             self.decks_and_clusters.pop(d1.id)
@@ -147,28 +150,35 @@ class ClusterEngine:
                 if d1.id in pair or d2.id in pair:
                     self.similarities.pop(pair)
 
-            self.similarities_to_calc = iter([(cluster, dac_deck) for dac_deck in self.decks_and_clusters.values()])
-            self.similarities_empty = False
+            similarities_to_calc = [(cluster, dac_deck) for dac_deck in self.decks_and_clusters.values()]
+            # If the number of similarities is too small, don't bother with the subprocesses
+            if len(similarities_to_calc) > 10000 * CONFIG.get("NUM_THREADS"):
 
-            # batch_size = math.ceil(len(similarities_to_calc) / 8)
-            # batches = itertools.batched(similarities_to_calc, batch_size)
-            threads = []
-            outputs = []
+                similarities_to_calc = iter([(cluster, dac_deck) for dac_deck in self.decks_and_clusters.values()])
 
-            thread_count = 0
-            for _ in range(CONFIG.get("NUM_THREADS")):
-                thread_count += 1
-                output = {}
-                outputs.append(output)
-                thread = threading.Thread(target=self._compute_similarities, name=f"Thread {thread_count}", args=(output,))
-                threads.append(thread)
-                thread.start()
+                processes = []
+                for _ in range(CONFIG.get("NUM_THREADS")):
+                    process = multiprocessing.Process(target=self._compute_similarities, args=(tasks, outputs))
+                    processes.append(process)
+                    process.start()
 
-            for thread in threads:
-                thread.join()
+                for pair in similarities_to_calc:
+                    tasks.put(pair)
+                for signal in [None] * CONFIG.get("NUM_THREADS"):
+                    tasks.put(signal)
 
-            for output in outputs:
-                self.similarities.update(output)
+                num_finished_processes = 0
+                while True:
+                    output = outputs.get()
+                    if output is None:
+                        num_finished_processes += 1
+                        if num_finished_processes >= CONFIG.get("NUM_THREADS"):
+                            break
+                    else:
+                        self.similarities[output[0]] = output[1]
+            else:
+                for dac_id, dac_deck in self.decks_and_clusters.items():
+                    self.similarities[(cluster.id, dac_id)] = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(cluster, dac_deck) # TODO: make the function configurable
 
             # Add the new cluster to the deck list
             self.decks_and_clusters[cluster.id] = cluster
