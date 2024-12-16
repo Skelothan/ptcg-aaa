@@ -4,6 +4,7 @@ TOURNAMENT_FORMAT_FILTER: "standard_f-h"
 TOURNAMENT_MIN_PLAYERS: 64
 
 # Valid range: 0 - 0.5 (only identical decks)
+NUM_THREADS: 8
 CLUSTER_SIMILARITY_THRESHOLD: 0.25
 CLUSTER_METHOD: "get_deck_inclusion_weighted_Jaccard"
 # Minimum number of decks

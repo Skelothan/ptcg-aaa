@@ -8,8 +8,9 @@ import logging
 import math
 import os.path
 import requests
+import threading
 import time
-from typing import Set
+from typing import Set, Union
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,13 @@ class ClusterEngine:
         self.decks_and_clusters = copy.copy(decks)
         self.similarities = {}
 
+        self.similarities_to_calc = []
+        self.stc_lock = threading.Lock()
+        self.similarities_empty = True
+        self.similarities_calc_count = 0
+        self.similarities_total_count = 0
+        
+
         self.greatest_similarity = -1
         self.most_similar_pair = tuple()
 
@@ -52,8 +60,7 @@ class ClusterEngine:
         self.most_similar_pair = max(self.similarities, key=lambda x: self.similarities[x])
         self.greatest_similarity = self.similarities[self.most_similar_pair]
 
-    def cluster_upgma(self):
-        # Auto-cluster any identical decks
+    def _auto_cluster_identical_decks(self):
         print("Auto-clustering identical decks...")
         original_size = len(self.decks_and_clusters)
         deck_contents_cache = {}
@@ -66,19 +73,62 @@ class ClusterEngine:
         self.decks_and_clusters = {d.id: d for d in deck_contents_cache.values()}
         print(f"Identical decks clustered. (Reduced from {original_size} to {len(self.decks_and_clusters)} decks)")
 
-        # UPGMA
+    def _get_next_similarity(self):
+        self.similarities_calc_count += 1
+        print(f"  Progress: {self.similarities_calc_count}/{self.similarities_total_count}", end="\r")
+        return next(self.similarities_to_calc, None)
+    
+    # def _increment_similarity_calc_count(self):
+    #     with self.count_lock:
+    #         self.similarities_calc_count += 1
+    #         print(f"  Progress: {len(self.similarities)}/{self.similarities_total_count}", end="\r")
 
-        # Initial similarity matrix build
-        total_combinations = math.comb(len(self.decks_and_clusters), 2)
-        print("Building initial similarity matrix...")
-        for d1, d2 in itertools.combinations(self.decks_and_clusters.values(), 2):
+    def _compute_similarities(self, output: dict[tuple[int, int]: float]):
+        while True:
+            pair = self._get_next_similarity()
+            if pair == None:
+                break
+            d1, d2 = pair
             similarity = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
-            self.similarities[(d1.id, d2.id)] = similarity
-            print(f"  Calculating similarity for {d1.id.ljust(32)} and {d2.id.ljust(32)} (Progress: {len(self.similarities)}/{total_combinations})", end="\r")
-        print("\nSimilarity matrix built.")
+            output[(d1.id, d2.id)] = similarity
+
+    def _build_initial_similarity_matrix(self):
+        start_time = datetime.now()
+        print("Building initial similarity matrix...")
+
+        self.similarities_calc_count = 0
+        self.similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
+        self.similarities_to_calc = itertools.combinations(self.decks_and_clusters.values(), 2)
+        self.similarities_empty = False
+
+        # batch_size = math.ceil(total_combinations / 8)
+        # batches = itertools.batched(similarities_to_calc, batch_size)
+        threads = []
+        outputs = []
+
+        thread_count = 0
+        # for batch in batches:
+        for _ in range(CONFIG.get("NUM_THREADS")):
+            thread_count += 1
+            output = {}
+            outputs.append(output)
+            thread = threading.Thread(target=self._compute_similarities, name=f"Thread {thread_count}", args=(output,))
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+        
+        for output in outputs:
+            self.similarities.update(output)
+
+        end_time = datetime.now()
+        print(f"\nSimilarity matrix built. (Time taken: {(end_time - start_time)})")
 
         self._update_most_similar_pair()
 
+    def _do_upgma(self):
+        start_time = datetime.now()
         print("Beginning clustering of decks with UPGMA method...")
         while self.greatest_similarity > CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD"):
             # Merge the two most similar decks/clusters
@@ -86,7 +136,7 @@ class ClusterEngine:
             d2 = self.decks_and_clusters.get(self.most_similar_pair[1])
             cluster = d1 + d2
 
-            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Current similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")})", end="\r")
+            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Current similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")})")
 
             # Remove the old decks/clusters from the deck list
             self.decks_and_clusters.pop(d1.id)
@@ -96,15 +146,47 @@ class ClusterEngine:
             for pair in list(self.similarities.keys()):
                 if d1.id in pair or d2.id in pair:
                     self.similarities.pop(pair)
-            for dac_id, dac_deck in self.decks_and_clusters.items():
-                self.similarities[(cluster.id, dac_id)] = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(cluster, dac_deck) # TODO: make function choice configurable
+
+            self.similarities_to_calc = iter([(cluster, dac_deck) for dac_deck in self.decks_and_clusters.values()])
+            self.similarities_empty = False
+
+            # batch_size = math.ceil(len(similarities_to_calc) / 8)
+            # batches = itertools.batched(similarities_to_calc, batch_size)
+            threads = []
+            outputs = []
+
+            thread_count = 0
+            for _ in range(CONFIG.get("NUM_THREADS")):
+                thread_count += 1
+                output = {}
+                outputs.append(output)
+                thread = threading.Thread(target=self._compute_similarities, name=f"Thread {thread_count}", args=(output,))
+                threads.append(thread)
+                thread.start()
+
+            for thread in threads:
+                thread.join()
+
+            for output in outputs:
+                self.similarities.update(output)
 
             # Add the new cluster to the deck list
             self.decks_and_clusters[cluster.id] = cluster
 
             self._update_most_similar_pair()
 
-        print(f"\nFinished merging decks.")
+        end_time = datetime.now()
+        print(f"\nFinished clustering. (Time taken: {(end_time - start_time)})")
+
+    def cluster_upgma(self):
+        # Auto-cluster any identical decks
+        self._auto_cluster_identical_decks()
+
+        # Initial similarity matrix build
+        self._build_initial_similarity_matrix()
+
+        # UPGMA
+        self._do_upgma()
 
     def print_cluster_report(self):
         archetype_count = 0
@@ -175,6 +257,7 @@ def download_tournament_results():
 def load_decks_from_files() -> set:
     decks = {}
 
+    start_time = datetime.now()
     print("Loading decks from standings files...")
     dir_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}"
     for file_path in os.listdir(dir_path):
@@ -191,7 +274,9 @@ def load_decks_from_files() -> set:
                     d = deck.Deck(player_name=player.get("name"), tournament_name=details.get("name"), date=datetime.fromisoformat(details.get("date")), format=CONFIG.get("TOURNAMENT_FORMAT_FILTER"))
                     d.load_decklist_limitless(player.get("decklist"))
                     decks[d.id] = d
-    print(f"\nFinished loading {len(decks)} decks.")
+
+    end_time = datetime.now()
+    print(f"\nFinished loading {len(decks)} decks. (Time taken: {(end_time - start_time)})")
 
     return decks
 
