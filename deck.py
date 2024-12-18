@@ -1,6 +1,6 @@
+import abc
 import hashlib
 import re
-from typing import Union
 import yaml
 
 from collections import Counter
@@ -65,8 +65,35 @@ ACE_SPECS = {
     "Enriching Energy",
 }
 
+class DeckLike(metaclass=abc.ABCMeta):
+    """
+    Base class for `Deck`s and `DeckCluster`s.
+    """
+    @abc.abstractmethod
+    def contents_hash() -> int:
+        raise NotImplementedError
+    
+    @property
+    @abc.abstractmethod
+    def title(self) -> str:
+        raise NotImplementedError
 
-class Deck:
+    @property
+    @abc.abstractmethod
+    def id(self) -> str:
+        raise NotImplementedError
+    
+    @property
+    @abc.abstractmethod
+    def num_decks(self) -> int:
+        raise NotImplementedError
+    
+    @property
+    @abc.abstractmethod
+    def decklist(self) -> Counter:
+        raise NotImplementedError
+
+class Deck(DeckLike):
     """
     Class representing a deck someone played at a tournament.
 
@@ -151,7 +178,7 @@ class Deck:
                 card_name = "Basic " + card_name
             decklist_list += [card_name] * (int)(card[0])
 
-        self.decklist = Counter(decklist_list)
+        self._decklist = Counter(decklist_list)
 
     def load_decklist_limitless(self, decklist: dict):
         """
@@ -186,18 +213,15 @@ class Deck:
                 card_name = "Basic " + card_name
             decklist_dict[card_name] = card.get("count")
 
-        self.decklist = Counter(decklist_dict)
+        self._decklist = Counter(decklist_dict)
 
     def __repr__(self) -> str:
         return f"<Deck: {self.title}>"
     
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(f"{self.title}\n{str(sorted(self.decklist.items()))}".encode("UTF-8"))
     
-    def contents_hash(self):
-        return hash(str(sorted(self.decklist.items())))
-    
-    def __add__(self, other):
+    def __add__(self, other: DeckLike) -> DeckLike:
         if isinstance(other, DeckCluster):
             other.add_deck(self)
             return other
@@ -208,6 +232,9 @@ class Deck:
             return cluster
         else:
             raise TypeError(f"Cannot add item of type {type(other)} to Deck")
+        
+    def contents_hash(self) -> int:
+        return hash(str(sorted(self.decklist.items())))
 
     @property
     def title(self) -> str:
@@ -223,16 +250,20 @@ class Deck:
     @property
     def num_decks(self) -> int:
         return 1
+    
+    @property
+    def decklist(self) -> Counter:
+        return self._decklist
 
     
-class DeckCluster:
+class DeckCluster(DeckLike):
 
     cluster_number = 1
     
     def __init__(self):
         self.number = DeckCluster.cluster_number
-        self.id = f"cluster-{self.number}"
-        self.title = f"Cluster {self.number}"
+        self._id = f"cluster-{self.number}"
+        self._title = f"Cluster {self.number}"
         DeckCluster.cluster_number += 1
         self.decks = set()
 
@@ -248,12 +279,12 @@ class DeckCluster:
         new_name : str
             The new name for this CardCounter.
         """
-        self.title = new_name
+        self._title = new_name
 
     def __repr__(self) -> str:
         return f"<DeckCluster: {self.title} ({self.num_decks})>"
 
-    def __add__(self, other):
+    def __add__(self, other: DeckLike) -> DeckLike:
         if isinstance(other, Deck):
             self.add_deck(other)
             return self
@@ -266,11 +297,22 @@ class DeckCluster:
         else:
             raise TypeError(f"Cannot add item of type {type(other)} to DeckCluster")
         
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.id.encode("UTF-8"))
 
     def __len__(self) -> int:
         return len(self.decks)
+    
+    def contents_hash(self) -> int:
+        return hash(str(sorted(self.decklist.items())))
+
+    @property
+    def title(self) -> str:
+        return self._title
+
+    @property
+    def id(self) -> str:
+        return self._id
 
     @property
     def decklist(self) -> Counter:
@@ -288,9 +330,6 @@ class DeckCluster:
     def num_decks(self) -> int:
         return len(self.decks)
     
-    def contents_hash(self):
-        return hash(str(sorted(self.decklist.items())))
-
 
 class CardCounter:
     """
@@ -555,7 +594,7 @@ class CardCounter:
             cards_weighted[k] = v * (1 - self.get_card_percent_of_max_usage(k))
         return Counter(cards_weighted)
 
-    def get_deck_Jaccard(_self, deck1: Deck, deck2: Deck) -> float:
+    def get_deck_Jaccard(_self, deck1: DeckLike, deck2: DeckLike) -> float:
         """
         Returns the Jaccard index of two decks.
 
@@ -574,7 +613,7 @@ class CardCounter:
         overlap = deck1.decklist & deck2.decklist
         return overlap.total() / (DECK_SIZE * 2)
 
-    def get_deck_inclusion_weighted_Jaccard(self, deck1: Union[Deck, DeckCluster], deck2: Union[Deck, DeckCluster]) -> float:
+    def get_deck_inclusion_weighted_Jaccard(self, deck1: DeckLike, deck2: DeckLike) -> float:
         """
         Returns Jaccard index of two decks where both decks are adjusted for card inclusion first.
 
@@ -597,7 +636,7 @@ class CardCounter:
             / self.weight_cards_by_inclusion(deck1.decklist + deck2.decklist).total()
         )
     
-    def get_deck_max_possible_inclusion_weighted_Jaccard(self, deck1: Union[Deck, DeckCluster], deck2: Union[Deck, DeckCluster]) -> float:
+    def get_deck_max_possible_inclusion_weighted_Jaccard(self, deck1: DeckLike, deck2: DeckLike) -> float:
         """
         Returns Jaccard index of two decks where both decks are adjusted for card inclusion first.
 

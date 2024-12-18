@@ -6,12 +6,11 @@ import itertools
 import json
 import logging
 import math
-import multiprocessing
+import multiprocessing as mp
+import multiprocessing.queues as mpq
 import os.path
 import requests
-import threading
 import time
-from typing import Set, Union
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -40,34 +39,62 @@ FORMAT_DATES = {
 }
 
 class ClusterEngine:
+    """
+    Class that stores both decks and can cluster them together.
 
-    def __init__(self, card_counter: deck.CardCounter, decks: dict[str: deck.Deck]):
+    Attributes
+    ----------
+    card_counter : deck.CardCounter
+        A CardCounter containing card usage statistics of the decks in this ClusterEngine. Used to provide the similarity functions.
+    decks : dict[str: deck.Deck]
+        The original decks input into this `ClusterEngine`.
+    decks_and_clusters : dict[str: Union[deck.Deck, deck.DeckCluster]]
+        The final output of this `ClusterEngine`, containing decks and clusters. Initialized to a copy of decks; clusters are formed by calling a cluster method.
+    similarities : dict[tuple[str, str]: float]
+        Cache of deck pairs and their similarity (distance) values.
+    greatest_similarity : float
+        The similarity value of the two most similar decks in decks_and_clusters. Used during UPGMA clustering to determine which pair of decks/clusters to join next.
+    most_similar_pair : tuple[str, str]
+        Used during UPGMA clustering to determine which pair of decks/clusters to join next.
+    """
+
+    def __init__(self, card_counter: deck.CardCounter, decks: dict[str, deck.Deck]):
         self.card_counter = card_counter
         self.decks = decks
-        self.decks_and_clusters = copy.copy(decks)
-        self.similarities = {}
+        self.decks_and_clusters: dict[str, deck.DeckLike] = copy.copy(decks)
+        self.similarities: dict[tuple[str, str], float] = {}
 
-        self.greatest_similarity = -1
-        self.most_similar_pair = tuple()
+        self.greatest_similarity: float = -1
+        self.most_similar_pair: tuple[str, str] = tuple()
 
     def _update_most_similar_pair(self):
+        """
+        Updates the values of greatest_similarity and most_similar_pair.
+        """
         self.most_similar_pair = max(self.similarities, key=lambda x: self.similarities[x])
         self.greatest_similarity = self.similarities[self.most_similar_pair]
 
     def _auto_cluster_identical_decks(self):
+        """
+        Takes the hash value of the contents all decks and creates clusters for any that are identical.
+        This is generally faster than any of the other cluster algorithms and so improves efficiency.
+        """
         print("Auto-clustering identical decks...")
         original_size = len(self.decks_and_clusters)
-        deck_contents_cache = {}
-        for key, deck in self.decks_and_clusters.items():
-            if deck.contents_hash() not in deck_contents_cache:
-                deck_contents_cache[deck.contents_hash()] = deck
+        deck_contents_cache: dict[int, deck.DeckLike] = {}
+        for d in self.decks_and_clusters.values():
+            if d.contents_hash() not in deck_contents_cache:
+                deck_contents_cache[d.contents_hash()] = d
             else: # Combine the two
-                deck_contents_cache[deck.contents_hash()] = deck_contents_cache[deck.contents_hash()] + deck
+                deck_contents_cache[d.contents_hash()] = deck_contents_cache[d.contents_hash()] + d
 
         self.decks_and_clusters = {d.id: d for d in deck_contents_cache.values()}
         print(f"Identical decks clustered. (Reduced from {original_size} to {len(self.decks_and_clusters)} decks)")
 
-    def _fill_queue(self, tasks: multiprocessing.Queue, num_threads):
+    def _fill_queue(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], num_threads):
+        """
+        Producer process for initial similarity matrix build. Fills the tasks queue with pairs of deck/clusters.
+        """
         similarities_to_calc = itertools.combinations(self.decks_and_clusters.values(), 2)
         num_tasks_queued = 0
         for pair in similarities_to_calc:
@@ -78,7 +105,10 @@ class ClusterEngine:
             tasks.put(signal)
             stop_signals_queued += 1
 
-    def _compute_similarities(self, tasks: multiprocessing.Queue, output: multiprocessing.Queue):
+    def _compute_similarities(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], output: mpq.Queue[tuple[tuple[str, str], float]]):
+        """
+        Worker process for initial similarity matrix build. Calculates the similarity of the provided decks/clusters and put it in the output queue.
+        """
         while True:
             pair = tasks.get(block=True)
             if pair is None:
@@ -86,29 +116,34 @@ class ClusterEngine:
                 break
             d1, d2 = pair
             similarity = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
-            output.put(((d1.id, d2.id), similarity))
+            output.put(((min(d1.id, d2.id), max(d1.id, d2.id)), similarity))
 
     def _build_initial_similarity_matrix(self):
+        """
+        Fills `similarities` with the similarity of each pair of decks/clusters in the initial deck and cluster list.
+
+        Multiprocessed to improve efficiency. The number of subprocesses is equal to CONFIG["NUM_THREADS"] plus one, plus the main process.
+        """
         start_time = datetime.now()
         print("Building initial similarity matrix...")
 
         similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
         
 
-        manager = multiprocessing.Manager()
-        tasks = manager.Queue()
-        outputs = manager.Queue()
+        manager = mp.Manager()
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
 
         processes = []
 
         # Start task queue-filling producer process
-        producer_process = multiprocessing.Process(target=self._fill_queue, args=(tasks, CONFIG.get("NUM_THREADS")))
+        producer_process = mp.Process(target=self._fill_queue, args=(tasks, CONFIG.get("NUM_THREADS")))
         processes.append(producer_process)
         producer_process.start()
 
         # Start task queue-emptying worker processes
         for _ in range(CONFIG.get("NUM_THREADS")):
-            process = multiprocessing.Process(target=self._compute_similarities, args=(tasks, outputs))
+            process = mp.Process(target=self._compute_similarities, args=(tasks, outputs))
             processes.append(process)
             process.start()
 
@@ -132,12 +167,15 @@ class ClusterEngine:
         self._update_most_similar_pair()
 
     def _do_upgma(self):
+        """
+        Main UPGMA logic.
+        """
         start_time = datetime.now()
         print("Beginning clustering of decks with UPGMA method...")
 
-        manager = multiprocessing.Manager()
-        tasks = manager.Queue()
-        outputs = manager.Queue()
+        manager = mp.Manager()
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
 
         merge_count = 0
 
@@ -168,7 +206,7 @@ class ClusterEngine:
 
                 processes = []
                 for _ in range(CONFIG.get("NUM_THREADS")):
-                    process = multiprocessing.Process(target=self._compute_similarities, args=(tasks, outputs))
+                    process = mp.Process(target=self._compute_similarities, args=(tasks, outputs))
                     processes.append(process)
                     process.start()
 
@@ -199,6 +237,10 @@ class ClusterEngine:
         print(f"\nFinished clustering. (Time taken: {(end_time - start_time)})")
 
     def cluster_upgma(self):
+        """
+        Cluster the decks in this `ClusterEngine`'s `decks_and_clusters` using UPGMA.
+        Straightforward but very slow (O(n^2 logn)). Unreasonable on more than a few hundred decks.
+        """
         # Auto-cluster any identical decks
         self._auto_cluster_identical_decks()
 
@@ -209,6 +251,10 @@ class ClusterEngine:
         self._do_upgma()
 
     def print_cluster_report(self):
+        """
+        Prints a report of all clusters with size bigger than CONFIG["ROGUE_DECK_THRESHOLD"] and which characteristic cards they contain 
+        to the reports directory.
+        """
         archetype_count = 0
         filename = f"reports/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}_archetypes.txt"
         with open(filename, "w") as file:
@@ -238,6 +284,13 @@ class ClusterEngine:
 
 
 def download_tournament_results():
+    """
+    Downloads tournament details and standings files from LimitlessTCG from an initial list in the raw_data/ directory and saves them to the data/ directory.
+    The initial list is configurable as CONFIG["TOURNAMENT_LIST"]. Only downloads data from tournaments with CONFIG["TOURNAMENT_MIN_PLAYERS"]
+    or more players.
+
+    Delays by 0.1 second in between each request pair to avoid flooding LimitlessTCG's API.
+    """
     with open(f"raw_data/{CONFIG.get("TOURNAMENT_LIST")}") as tournament_file:
         tournaments = json.load(tournament_file)
         tournaments_filtered = filter(
@@ -274,7 +327,10 @@ def download_tournament_results():
                 time.sleep(0.1)
 
 
-def load_decks_from_files() -> set:
+def load_decks_from_files() -> dict[str, deck.Deck]:
+    """
+    Reads decklist data from the data/ directory and creates a `deck.Deck` object for each one.
+    """
     decks = {}
 
     start_time = datetime.now()
@@ -301,13 +357,14 @@ def load_decks_from_files() -> set:
     return decks
 
 
-def load_decks():
+def load_decks() -> tuple[dict[str, deck.Deck], deck.CardCounter]:
+    """
+    Read decklist data from the data/ directory and load them all into a `deck.CardCounter`.
+    """
     decks = load_decks_from_files()
     card_counter = deck.CardCounter(name=f"{CONFIG.get("TOURNAMENT_FORMAT_FILTER")} CardCounter")
     for d in decks.values():
         card_counter.add_deck(d)
-
-    
 
     return decks, card_counter
 
