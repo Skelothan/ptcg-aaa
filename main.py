@@ -67,9 +67,20 @@ class ClusterEngine:
         self.decks_and_clusters = {d.id: d for d in deck_contents_cache.values()}
         print(f"Identical decks clustered. (Reduced from {original_size} to {len(self.decks_and_clusters)} decks)")
 
+    def _fill_queue(self, tasks: multiprocessing.Queue, num_threads):
+        similarities_to_calc = itertools.combinations(self.decks_and_clusters.values(), 2)
+        num_tasks_queued = 0
+        for pair in similarities_to_calc:
+            tasks.put(pair)
+            num_tasks_queued += 1
+        stop_signals_queued = 0
+        for signal in [None] * num_threads:
+            tasks.put(signal)
+            stop_signals_queued += 1
+
     def _compute_similarities(self, tasks: multiprocessing.Queue, output: multiprocessing.Queue):
         while True:
-            pair = tasks.get(timeout=1)
+            pair = tasks.get(block=True)
             if pair is None:
                 output.put(None)
                 break
@@ -82,31 +93,26 @@ class ClusterEngine:
         print("Building initial similarity matrix...")
 
         similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
-        similarities_to_calc = itertools.combinations(self.decks_and_clusters.values(), 2)
+        
 
         manager = multiprocessing.Manager()
         tasks = manager.Queue()
         outputs = manager.Queue()
 
         processes = []
+
+        # Start task queue-filling producer process
+        producer_process = multiprocessing.Process(target=self._fill_queue, args=(tasks, CONFIG.get("NUM_THREADS")))
+        processes.append(producer_process)
+        producer_process.start()
+
+        # Start task queue-emptying worker processes
         for _ in range(CONFIG.get("NUM_THREADS")):
             process = multiprocessing.Process(target=self._compute_similarities, args=(tasks, outputs))
             processes.append(process)
             process.start()
 
-        num_tasks_queued = 0
-        for pair in similarities_to_calc:
-            tasks.put(pair)
-            num_tasks_queued += 1
-            print(f"  Added {pair[0].id.ljust(32)} and {pair[1].id.ljust(32)} to the queue (Progress: {num_tasks_queued}/{similarities_total_count})", end="\r")
-        print("")
-        stop_signals_queued = 0
-        for signal in [None] * CONFIG.get("NUM_THREADS"):
-            tasks.put(signal)
-            stop_signals_queued += 1
-            print(f"  Added a stop signal to the queue (Progress: {stop_signals_queued}/{CONFIG.get("NUM_THREADS")})", end="\r")
-        print("")
-
+        # Main process works on emptying output queue
         num_finished_processes = 0
         num_outputs_received = 0
         while True:
@@ -133,23 +139,27 @@ class ClusterEngine:
         tasks = manager.Queue()
         outputs = manager.Queue()
 
+        merge_count = 0
+
         while self.greatest_similarity > CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD"):
             # Merge the two most similar decks/clusters
-            d1 = self.decks_and_clusters.get(self.most_similar_pair[0])
-            d2 = self.decks_and_clusters.get(self.most_similar_pair[1])
+            d1 = self.decks_and_clusters[self.most_similar_pair[0]]
+            d2 = self.decks_and_clusters[self.most_similar_pair[1]]
             cluster = d1 + d2
 
-            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Current similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")})", end="\r")
+            merge_count += 1
+            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")}) ({merge_count} merged / {len(self.decks_and_clusters)} left)", end="\r")
 
             # Remove the old decks/clusters from the deck list
-            self.decks_and_clusters.pop(d1.id)
-            self.decks_and_clusters.pop(d2.id)
+            del self.decks_and_clusters[d1.id]
+            del self.decks_and_clusters[d2.id]
 
             # Update the similarities list
             for pair in list(self.similarities.keys()):
                 if d1.id in pair or d2.id in pair:
-                    self.similarities.pop(pair)
+                    del self.similarities[pair]
 
+            # TODO: clean this mess up
             similarities_to_calc = [(cluster, dac_deck) for dac_deck in self.decks_and_clusters.values()]
             # If the number of similarities is too small, don't bother with the subprocesses
             if len(similarities_to_calc) > 10000 * CONFIG.get("NUM_THREADS"):

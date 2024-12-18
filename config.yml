@@ -2,8 +2,8 @@ TOURNAMENT_LIST: tournaments_2024-12-15.json
 TOURNAMENT_FORMAT_FILTER: "BRS-SSP"
 TOURNAMENT_MIN_PLAYERS: 64
 
-# Valid range: 0 - 0.5 (only identical decks)
 NUM_THREADS: 4
+# Valid range: 0 - 0.5 (only identical decks)
 CLUSTER_SIMILARITY_THRESHOLD: 0.25
 CLUSTER_METHOD: "get_deck_inclusion_weighted_Jaccard"
 # Minimum number of decks
