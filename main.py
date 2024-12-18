@@ -250,6 +250,33 @@ class ClusterEngine:
         # UPGMA
         self._do_upgma()
 
+    def rename_archetypes(self):
+        for archetype in sorted(self.decks_and_clusters.values(), key=lambda a: a.num_decks, reverse=True):
+            if not isinstance(archetype, deck.DeckCluster):
+                continue
+
+            longest_card_name_length = max(len(max(archetype.decklist.keys(), key=len)), len("Card Name"))
+            # longest_table_line_length = longest_card_name_length + len(" | Weight | Avg. count")
+
+            print(f"{"Card Name".ljust(longest_card_name_length)} | {"Weight"} | {"Avg. count"}")
+            print(f"{"-" * longest_card_name_length} | {"------"} | {"----------"}")
+            archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
+
+            i = 0
+            for card, count in archetype_cards:
+                print(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get("REPORT_DECIMAL_ROUNDING"))).ljust(4, "0").rjust(6)} | {str(round(archetype.decklist.get(card), CONFIG.get("REPORT_DECIMAL_ROUNDING"))).ljust(4, "0").rjust(10)}")
+                i += 1
+                if i >= 20:
+                    break
+
+            print("\nWhat should this archetype be called? (Enter nothing to skip.)")
+            new_name = input("> ")
+            if len(new_name.strip()) != 0:
+                archetype.rename(new_name)
+            print("")
+        
+        print("All archetypes renamed.")
+
     def print_cluster_report(self):
         """
         Prints a report of all clusters with size bigger than CONFIG["ROGUE_DECK_THRESHOLD"] and which characteristic cards they contain 
@@ -388,11 +415,12 @@ def print_card_usage_report(card_counter: deck.CardCounter):
     print(f"Saved CSV report to {filename}.")
 
 
-def compute_archetypes(decks: dict[str: deck.Deck], card_counter: deck.CardCounter):
+def compute_archetypes(decks: dict[str: deck.Deck], card_counter: deck.CardCounter) -> ClusterEngine:
     cluster_engine = ClusterEngine(card_counter, decks)
 
     cluster_engine.cluster_upgma()
-    cluster_engine.print_cluster_report()
+
+    return cluster_engine    
 
 
 def main():
@@ -407,6 +435,7 @@ def main():
 
     decks = None
     card_counter = None
+    cluster_engine = None
 
     print("==== Pokémon TCG Automatic Archetype Analyzer ====")
     while True:
@@ -419,8 +448,12 @@ def main():
 
         if card_counter is None:
             print("""Please choose an option:
+                == Download data == 
                 1. Download tournament results
+                  
+                == Process data == 
                 2. Load decks
+                  
                 0. Exit
                 """)
 
@@ -433,12 +466,18 @@ def main():
             else:
                 print("Goodbye!")
                 exit(0)
-        else:
+        elif cluster_engine is None:
             print("""Please choose an option:
+                == Download data == 
                 1. Download tournament results
+                  
+                == Process data == 
                 2. Load decks
-                3. Print card usage report
-                4. Compute deck archetypes
+                3. Compute deck archetypes
+                  
+                == Reports ==
+                6. Print card usage report
+                
                 0. Exit
                 """)
 
@@ -449,9 +488,47 @@ def main():
             elif option == "2":
                 decks, card_counter = load_decks()
             elif option == "3":
+                cluster_engine = compute_archetypes(decks, card_counter)
+            elif option == "6":
                 print_card_usage_report(card_counter)
+            else:
+                print("Goodbye!")
+                exit(0)
+        else:
+            print("""Please choose an option:
+                == Download data == 
+                1.  Download tournament results
+                  
+                == Process data == 
+                2.  Load decks
+                3.  Compute deck archetypes
+                4.  Rename archetypes
+               [5.  TBD: Compute archetype variants]
+                  
+                == Reports ==
+                6.  Print card usage report
+                7.  Print archetype report
+               [8.  TBD: Print rogue deck report]
+               [9.  TBD: Print archetype variant report]
+               [10. TBD: Print deck spiciness report]
+                
+                X. Exit
+                """)
+
+            option = input("> ")
+            
+            if option == "1":
+                download_tournament_results()
+            elif option == "2":
+                decks, card_counter = load_decks()
+            elif option == "3":
+                cluster_engine = compute_archetypes(decks, card_counter)
             elif option == "4":
-                compute_archetypes(decks, card_counter)
+                cluster_engine.rename_archetypes()
+            elif option == "6":
+                print_card_usage_report(card_counter)
+            elif option == "7":
+                cluster_engine.print_cluster_report()
             else:
                 print("Goodbye!")
                 exit(0)
