@@ -155,7 +155,6 @@ class ClusterEngine:
             d2 = self.decks_and_clusters[self.most_similar_pair[1]]
             cluster = d1 + d2
 
-            merge_count += 1
             print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")}) ({merge_count} merged / {len(self.decks_and_clusters)} left)", end="\r")
 
             # Remove the old decks/clusters from the deck list
@@ -200,6 +199,7 @@ class ClusterEngine:
 
             # Add the new cluster to the deck list
             self.decks_and_clusters[cluster.id] = cluster
+            merge_count += 1
 
             self._update_most_similar_pair()
 
