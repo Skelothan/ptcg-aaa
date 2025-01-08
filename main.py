@@ -143,7 +143,7 @@ def print_card_usage_report(card_counter: deck.CardCounter):
 def compute_archetypes(decks: dict[str: deck.Deck], card_counter: deck.CardCounter) -> cluster.ClusterEngine:
     cluster_engine = cluster.ClusterEngine(card_counter, decks)
 
-    cluster_engine.cluster_upgma()
+    cluster_engine.cluster()
 
     return cluster_engine    
 

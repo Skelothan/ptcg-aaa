@@ -1,11 +1,25 @@
+# The raw tournament results list to use
 TOURNAMENT_LIST: tournaments_2024-12-15.json
+# The format to download decklists from or analyze.
 TOURNAMENT_FORMAT_FILTER: "BRS-SSP"
+# The minimum number of players in a tournament needed to 
 TOURNAMENT_MIN_PLAYERS: 64
 
-NUM_THREADS: 4
-# Valid range: 0 - 0.5 (only identical decks)
-CLUSTER_SIMILARITY_THRESHOLD: 0.25
-CLUSTER_METHOD: "get_deck_inclusion_weighted_Jaccard"
-# Minimum number of decks
-ROGUE_DECK_THRESHOLD: 64
+# Number of decimal places to round numbers to in reports.
 REPORT_DECIMAL_ROUNDING: 2
+
+# The number of subprocesses to use for multiprocessing.
+NUM_THREADS: 4
+
+# The method used to calculate deck similarity to each other.
+# Currently nonfunctional.
+SIMILARITY_METHOD: "get_deck_max_possible_inclusion_weighted_Jaccard"
+
+# UPGMA only. Valid range: 0 - 0.5 (only identical decks)
+CLUSTER_SIMILARITY_THRESHOLD: 0.25
+# UPGMA only, for now. Minimum number of decks in a cluster.
+ROGUE_DECK_THRESHOLD: 5
+
+# HDBSCAN only. Used to estimate cluster density. 
+# Bigger values makes decks more likely to be considered rogue.
+K_THRESHOLD: 8

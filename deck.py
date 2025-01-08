@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import abc
 import hashlib
+import heapq
 import re
-import yaml
-
 from collections import Counter
 from datetime import date
+
+import yaml
 
 DECK_SIZE = 60
 
@@ -65,10 +68,16 @@ ACE_SPECS = {
     "Enriching Energy",
 }
 
+
 class DeckLike(metaclass=abc.ABCMeta):
     """
     Base class for `Deck`s and `DeckCluster`s.
     """
+
+    def __init__(self):
+        self.similarities: list[tuple[float, Deck]]
+        raise NotImplementedError
+
     @abc.abstractmethod
     def contents_hash() -> int:
         raise NotImplementedError
@@ -92,6 +101,25 @@ class DeckLike(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def decklist(self) -> Counter:
         raise NotImplementedError
+    
+    def __eq__(self, other: DeckLike):
+        return self.id == other.id
+    
+    def __ne__(self, other: DeckLike):
+        return self.id != other.id
+
+    def __lt__(self, other: DeckLike):
+        return self.id < other.id
+    
+    def __le__(self, other: DeckLike):
+        return self.id <= other.id
+    
+    def __gt__(self, other: DeckLike):
+        return self.id > other.id
+    
+    def __ge__(self, other: DeckLike):
+        return self.id >= other.id
+
 
 class Deck(DeckLike):
     """
@@ -142,6 +170,8 @@ class Deck(DeckLike):
         self.tournament_name = tournament_name
         self.date = date
         self.format = format
+        self.similarities = []
+        self.mut_reach_similarities: list[tuple[float, Deck, Deck]] = []
 
     def load_decklist_ptcgl(self, decklist: str):
         """
@@ -215,6 +245,11 @@ class Deck(DeckLike):
 
         self._decklist = Counter(decklist_dict)
 
+    def k_distance(self, k) -> float:
+        if len(self.similarities) < k:
+            raise ValueError
+        return 0.5 - heapq.nlargest(k, self.similarities)[-1][0]
+
     def __repr__(self) -> str:
         return f"<Deck: {self.title}>"
     
@@ -266,6 +301,7 @@ class DeckCluster(DeckLike):
         self._title = f"Cluster {self.number}"
         DeckCluster.cluster_number += 1
         self.decks = set()
+        self.similarities = []
 
     def add_deck(self, deck: Deck):
         self.decks.add(deck)

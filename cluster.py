@@ -2,10 +2,17 @@ from config import CONFIG
 import copy
 from datetime import datetime
 import deck
+from enum import Enum
+import heapq
 import itertools
 import math
 import multiprocessing as mp
 import multiprocessing.queues as mpq
+
+
+class ClusterMethod(Enum):
+    UPGMA = "UPGMA"
+    HDBSCAN = "HDBSCAN*"
 
 
 class ClusterEngine:
@@ -30,12 +37,17 @@ class ClusterEngine:
 
     def __init__(self, card_counter: deck.CardCounter, decks: dict[str, deck.Deck]):
         self.card_counter = card_counter
-        self.decks = decks
+        self.original_decks = decks
         self.decks_and_clusters: dict[str, deck.DeckLike] = copy.copy(decks)
         self.similarities: dict[tuple[str, str], float] = {}
 
         self.greatest_similarity: float = -1
         self.most_similar_pair: tuple[str, str] = tuple()
+
+        # self.mutual_reachabilities: list[float, deck.Deck, deck.Deck] = []
+        self.spanning_tree_root: deck.Deck
+        self.spanning_tree_decks: set[deck.Deck] = set()
+        self.spanning_tree_mutual_reachabilities: list[tuple[float, deck.Deck, deck.Deck]] = []
 
     def _update_most_similar_pair(self):
         """
@@ -99,7 +111,6 @@ class ClusterEngine:
 
         similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
         
-
         manager = mp.Manager()
         tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
         outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
@@ -128,8 +139,12 @@ class ClusterEngine:
                     break
             else:
                 num_outputs_received += 1
-                print(f"  Calculated similarity for {output[0][0].ljust(32)} and {output[0][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
                 self.similarities[output[0]] = output[1]
+                d1 = self.decks_and_clusters[output[0][0]]
+                d2 = self.decks_and_clusters[output[0][1]]
+                heapq.heappush(d1.similarities, (output[1], d2))
+                heapq.heappush(d2.similarities, (output[1], d1))
+                print(f"  Calculated similarity for {output[0][0].ljust(32)} and {output[0][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
 
         end_time = datetime.now()
         print(f"\nSimilarity matrix built. (Time taken: {(end_time - start_time)})")
@@ -220,6 +235,125 @@ class ClusterEngine:
         # UPGMA
         self._do_upgma()
 
+    def _mut_reach_fill_queue(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], num_threads):
+        """
+        Producer process for initial similarity matrix build. Fills the tasks queue with pairs of deck/clusters.
+        """
+        similarities_to_calc = self.similarities.items()
+        num_tasks_queued = 0
+        for pair in similarities_to_calc:
+            tasks.put(pair)
+            num_tasks_queued += 1
+        stop_signals_queued = 0
+        for signal in [None] * num_threads:
+            tasks.put(signal)
+            stop_signals_queued += 1
+
+    def _compute_mut_reach(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], output: mpq.Queue[tuple[tuple[str, str], float]]):
+        """
+        Worker process for initial similarity matrix build. Calculates the similarity of the provided decks/clusters and put it in the output queue.
+        """
+        while True:
+            t = tasks.get(block=True)
+            if t is None:
+                output.put(None)
+                break
+            pair, similarity = t
+            d1: deck.Deck = self.decks_and_clusters[pair[0]]
+            d2: deck.Deck = self.decks_and_clusters[pair[1]]
+            mut_reach = max([d1.k_distance(CONFIG["K_THRESHOLD"]), d2.k_distance(CONFIG["K_THRESHOLD"]), 0.5 - similarity])
+            output.put(((min(d1.id, d2.id), max(d1.id, d2.id)), mut_reach))
+
+    def _calculate_mutual_reachabilities(self):
+        start_time = datetime.now()
+        print("Calculating mutual reachabilities...")
+
+        manager = mp.Manager()
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
+
+        processes = []
+
+        # Start task queue-filling producer process
+        producer_process = mp.Process(target=self._mut_reach_fill_queue, args=(tasks, CONFIG.get("NUM_THREADS")))
+        processes.append(producer_process)
+        producer_process.start()
+
+        # Start task queue-emptying worker processes
+        for _ in range(CONFIG.get("NUM_THREADS")):
+            process = mp.Process(target=self._compute_mut_reach, args=(tasks, outputs))
+            processes.append(process)
+            process.start()
+
+        num_finished_processes = 0
+        num_outputs_received = 0
+        while True:
+            output = outputs.get()
+            if output is None:
+                num_finished_processes += 1
+                if num_finished_processes >= CONFIG.get("NUM_THREADS"):
+                    break
+            else:
+                num_outputs_received += 1
+                d1: deck.Deck = self.decks_and_clusters[output[0][0]]
+                d2: deck.Deck = self.decks_and_clusters[output[0][1]]
+                mut_reach = output[1]
+                heapq.heappush(d1.mut_reach_similarities, (mut_reach, d1, d2))
+                heapq.heappush(d2.mut_reach_similarities, (mut_reach, d2, d1))
+                print(f"  Calculated mutual reachability for {d1.id} and {d2.id} (Progress: {num_outputs_received}/{len(self.similarities)})", end="\r")
+            
+        end_time = datetime.now()
+        print(f"\nMutual reachabilities calculated. (Time taken: {(end_time - start_time)})")
+
+
+    def _build_spanning_tree(self):
+        '''
+        Uses Prim's algorithm to build a spanning tree out of the mutual reachability values.
+        '''
+        start_time = datetime.now()
+        print("Building spanning tree...")
+       
+
+        self.spanning_tree_root: deck.Deck = self.decks_and_clusters[next(iter(self.original_decks))]
+        self.spanning_tree_decks.add(self.spanning_tree_root)
+        self.tree_similarities = self.spanning_tree_root.mut_reach_similarities
+
+        while len(self.spanning_tree_decks) < len(self.original_decks):
+            mutual_reachability, this_deck, other_deck = heapq.heappop(self.tree_similarities)
+            if other_deck not in self.spanning_tree_decks:
+                self.spanning_tree_decks.add(other_deck)
+                heapq.heappush(self.spanning_tree_mutual_reachabilities, (mutual_reachability, this_deck, other_deck))
+                self.tree_similarities += other_deck.mut_reach_similarities
+                heapq.heapify(self.tree_similarities)
+                print(f"  Connected {other_deck.id} to the spanning tree (Progress: {len(self.spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
+
+        end_time = datetime.now()
+        print(f"\nSpanning tree built. (Time taken: {(end_time - start_time)})")
+
+    def cluster_hdbscan(self):
+        # Initial similarity matrix build
+        self._build_initial_similarity_matrix()
+
+        self._calculate_mutual_reachabilities()
+
+        self._build_spanning_tree()
+
+        pass
+
+
+    def cluster(self, cluster_method=ClusterMethod.HDBSCAN):
+        """
+        Cluster the decks in this `ClusterEngine`'s `decks_and_clusters` using the provided `ClusterMethod`.
+        
+        Parameters
+        ----------
+        cluster_method : ClusterMethod
+            A clustering algorithm to use. Default is HDBSCAN*.
+        """
+        {
+            ClusterMethod.UPGMA: self.cluster_upgma,
+            ClusterMethod.HDBSCAN: self.cluster_hdbscan,
+        }[cluster_method]()
 
     def rename_archetypes(self):
         for archetype in sorted(self.decks_and_clusters.values(), key=lambda a: a.num_decks, reverse=True):
