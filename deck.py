@@ -103,10 +103,10 @@ class DeckLike(metaclass=abc.ABCMeta):
         raise NotImplementedError
     
     def __eq__(self, other: DeckLike):
-        return self.id == other.id
+        return isinstance(other, DeckLike) and self.id == other.id
     
     def __ne__(self, other: DeckLike):
-        return self.id != other.id
+        return not isinstance(other, DeckLike) or self.id != other.id
 
     def __lt__(self, other: DeckLike):
         return self.id < other.id
@@ -172,6 +172,9 @@ class Deck(DeckLike):
         self.format = format
         self.similarities = []
         self.mut_reach_similarities: list[tuple[float, Deck, Deck]] = []
+
+        # Used during HDBSCAN* clustering
+        self.death_distance: float
 
     def load_decklist_ptcgl(self, decklist: str):
         """
@@ -300,7 +303,7 @@ class DeckCluster(DeckLike):
         self._id = f"cluster-{self.number}"
         self._title = f"Cluster {self.number}"
         DeckCluster.cluster_number += 1
-        self.decks = set()
+        self.decks: set[Deck] = set()
         self.similarities = []
 
     def add_deck(self, deck: Deck):

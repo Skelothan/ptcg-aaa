@@ -1,13 +1,223 @@
+from __future__ import annotations
+
 from config import CONFIG 
 import copy
 from datetime import datetime
 import deck
 from enum import Enum
+import functools
 import heapq
 import itertools
 import math
 import multiprocessing as mp
 import multiprocessing.queues as mpq
+from typing import Iterable
+
+
+class NestingSet:
+    '''Set wrapper which keeps track of how many elements are in its great-great-etc. grandchildren.'''
+
+    def __init__(self, s: Iterable, distance: float):
+        self.set: set[deck.Deck | NestingSet] = set(s)
+
+        self.size = 0
+        self.contents: set[deck.Deck] = set()
+        for i in s:
+            if hasattr(i, "size") and hasattr(i, "contents"):
+                self.size += i.size
+                self.contents = self.contents.union(i.contents)
+            else:
+                self.size += 1
+                self.contents.add(i)
+
+        self.distance = distance
+        self.stability: float | None = None
+        self.deck_cluster: deck.DeckCluster
+        self.cohesion: float
+
+    def __hash__(self):
+        return hash(tuple(sorted(self.contents)))
+    
+    def add(self, i):
+        self.set.add(i)
+        if hasattr(i, "size") and hasattr(i, "contents"):
+            self.size += i.size
+            self.contents = self.contents.union(i.contents)
+        else:
+            self.size += 1
+            self.contents.add(i)
+
+    def remove(self, i):
+        self.set.remove(i)
+        if hasattr(i, "size") and hasattr(i, "contents"):
+            self.size -= i.size
+            self.contents = self.contents.difference(i.contents)
+        else:
+            self.size -= 1
+            self.contents.remove(i)
+
+    def __repr__(self) -> str:
+        if self.stability:
+            return f"<NestingSet: size {self.size}, stability {round(self.stability, 2)}>"
+        if self.deck_cluster and self.cohesion:
+            return f"<NestingSet({self.deck_cluster.title}): size {self.size}, cohesion {round(self.cohesion, 2)}>"
+        return f"<NestingSet: size {self.size}>"
+
+
+class DisjointSetForest():
+
+    def __init__(self, data: Iterable, linkages: list[tuple[float, deck.Deck, deck.Deck]]):
+        '''
+        linkages should be a heap.
+        '''
+
+        self.data = set(data)
+        self.uf_forest = set(data)
+        self.condensed_tree: dict[NestingSet, tuple[NestingSet, NestingSet]] = {}
+        self.linkages = linkages
+
+        self.selected_clusters = []
+        self.rogue_decks = set(data)
+
+    def union_find(self):
+        
+        total_size = len(self.data) - 1
+
+        while len(self.data) > 1 and len(self.linkages) > 0:
+            distance, d1, d2 = heapq.heappop(self.linkages)
+
+            s1 = None
+            s2 = None
+            for s in self.data:
+                if isinstance(s, NestingSet):
+                    if d1 in s.contents:
+                        s1 = s
+                    if d2 in s.contents:
+                        s2 = s
+                else: # s is a Deck
+                    if s == d1:
+                        s1 = s
+                    if s == d2:
+                        s2 = s
+                if s1 and s2:
+                    break
+                
+            if s1 == s2: # Don't do anything if the two are already part of the same parent
+                break
+            else:
+                merged_set = NestingSet((s1, s2), distance)
+                self.data.remove(s1)
+                self.data.remove(s2)
+                self.data.add(merged_set)
+            
+            print(f"  Building cluster hierarchy... (Progress: {total_size - len(self.data) + 1}/{total_size})", end="\r")
+
+        self.uf_forest = self.data.pop()
+        print("")
+
+    def _do_condense_tree(self, nesting_set: NestingSet, parent: NestingSet):
+        print(f"  Condensing cluster hierarchy...", end="\r")
+
+        def mark_death_distances(item: NestingSet | deck.Deck, distance: float):
+            if isinstance(item, NestingSet):
+                for d in item.contents:
+                    d.death_distance = distance
+            else:
+                item.death_distance = distance
+
+        item1, item2 = tuple(nesting_set.set)
+
+        if all([
+            isinstance(item1, NestingSet) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
+            isinstance(item2, NestingSet) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
+            ]):
+            self.condensed_tree[parent] = (item1, item2)
+            self._do_condense_tree(item1, item1)
+            self._do_condense_tree(item2, item2)
+        elif all([
+            isinstance(item1, NestingSet) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
+            not(isinstance(item2, NestingSet) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"])
+        ]):
+            mark_death_distances(item2, nesting_set.distance)
+            self._do_condense_tree(item1, parent)
+        elif all([
+            not(isinstance(item1, NestingSet) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"]),
+            isinstance(item2, NestingSet) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
+        ]):
+            mark_death_distances(item1, nesting_set.distance)
+            self._do_condense_tree(item2, parent)
+        else:
+            mark_death_distances(item1, nesting_set.distance)
+            mark_death_distances(item2, nesting_set.distance)
+
+    def condense_tree(self):
+        self._do_condense_tree(self.uf_forest, self.uf_forest)
+        print("")
+
+    def _do_select_clusters(self, considering: NestingSet, selected_clusters: set[NestingSet]):
+        if considering in self.condensed_tree.keys():
+            c1, c2 = self.condensed_tree[considering]
+            self._do_select_clusters(c1, selected_clusters)
+            self._do_select_clusters(c2, selected_clusters)
+
+            if considering.stability >= c1.stability + c2.stability:
+                selected_clusters.remove(c1)
+                selected_clusters.remove(c2)
+                selected_clusters.add(considering)
+            else:
+                considering.stability = c1.stability + c2.stability
+
+    def select_clusters_stability(self, card_counter: deck.CardCounter):
+        print(f"  Selecting clusters...", end="\r")
+
+        all_sets = {x for y in self.condensed_tree.values() for x in y}
+        all_sets.add(self.uf_forest)
+       
+        # Normally, you'd use stability to proceed here with HDBSCAN*. 
+        # But I found that trying to group with stability pretty much always resulted in a single blobby archetype.
+        # I've left my implementation here, but we'll be skipping it.
+        warning_given = False
+        for c in all_sets:
+            if c.distance is None:
+                c.stability = None
+            total = 0
+            for d in c.contents:
+                if d.death_distance == 0:
+                    if not warning_given:
+                        print("  \033[93m[WARNING]\033[0m: A pair of decks had mutual reachability of 0. Your K-threshold is likely too low.")
+                        warning_given = True
+                    total += (float("inf") - 1 / c.distance)
+                else:
+                    total += (1 / d.death_distance - 1 / c.distance)
+            c.stability = total
+
+        selected_clusters = all_sets - self.condensed_tree.keys()
+
+        self._do_select_clusters(self.uf_forest, selected_clusters)
+
+        for c in selected_clusters:
+            self.selected_clusters.append(c.deck_cluster)
+            self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
+
+        print("")
+
+    def select_clusters_cohesion(self, card_counter: deck.CardCounter):
+        print(f"  Selecting clusters...", end="\r")
+
+        all_sets = {x for y in self.condensed_tree.values() for x in y}
+        all_sets.add(self.uf_forest)
+        
+        for c in all_sets:
+            c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
+            c.cohesion = sum([card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(c.deck_cluster, d) for d in c.deck_cluster.decks]) / len(c.deck_cluster.decks)
+
+        selected_clusters = all_sets - self.condensed_tree.keys()
+
+        for c in selected_clusters:
+            self.selected_clusters.append(c.deck_cluster)
+            self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
+
+        print("")
 
 
 class ClusterMethod(Enum):
@@ -15,6 +225,7 @@ class ClusterMethod(Enum):
     HDBSCAN = "HDBSCAN*"
 
 
+# TODO: refactor this — have each cluster algorithm use its own cluster engine subclass and initialize with a factory
 class ClusterEngine:
     """
     Class that stores both decks and can cluster them together.
@@ -39,6 +250,7 @@ class ClusterEngine:
         self.card_counter = card_counter
         self.original_decks = decks
         self.decks_and_clusters: dict[str, deck.DeckLike] = copy.copy(decks)
+        self.rogue_decks: set[deck.DeckLike] = set()
         self.similarities: dict[tuple[str, str], float] = {}
 
         self.greatest_similarity: float = -1
@@ -46,8 +258,7 @@ class ClusterEngine:
 
         # self.mutual_reachabilities: list[float, deck.Deck, deck.Deck] = []
         self.spanning_tree_root: deck.Deck
-        self.spanning_tree_decks: set[deck.Deck] = set()
-        self.spanning_tree_mutual_reachabilities: list[tuple[float, deck.Deck, deck.Deck]] = []
+        self.spanning_tree_distances: list[tuple[float, deck.Deck, deck.Deck]] = []
 
     def _update_most_similar_pair(self):
         """
@@ -312,23 +523,41 @@ class ClusterEngine:
         '''
         start_time = datetime.now()
         print("Building spanning tree...")
-       
+
+        spanning_tree_decks: set[deck.Deck] = set()
 
         self.spanning_tree_root: deck.Deck = self.decks_and_clusters[next(iter(self.original_decks))]
-        self.spanning_tree_decks.add(self.spanning_tree_root)
+        spanning_tree_decks.add(self.spanning_tree_root)
         self.tree_similarities = self.spanning_tree_root.mut_reach_similarities
 
-        while len(self.spanning_tree_decks) < len(self.original_decks):
-            mutual_reachability, this_deck, other_deck = heapq.heappop(self.tree_similarities)
-            if other_deck not in self.spanning_tree_decks:
-                self.spanning_tree_decks.add(other_deck)
-                heapq.heappush(self.spanning_tree_mutual_reachabilities, (mutual_reachability, this_deck, other_deck))
+        while len(spanning_tree_decks) < len(self.original_decks):
+            mut_reach_dist, this_deck, other_deck = heapq.heappop(self.tree_similarities)
+            # distance = 0.5 - self.similarities[min(this_deck.id, other_deck.id), max(this_deck.id, other_deck.id)]
+            if other_deck not in spanning_tree_decks:
+                spanning_tree_decks.add(other_deck)
+                heapq.heappush(self.spanning_tree_distances, (mut_reach_dist, this_deck, other_deck))
                 self.tree_similarities += other_deck.mut_reach_similarities
                 heapq.heapify(self.tree_similarities)
-                print(f"  Connected {other_deck.id} to the spanning tree (Progress: {len(self.spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
+                print(f"  Connected {other_deck.id} to the spanning tree (Progress: {len(spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
 
         end_time = datetime.now()
         print(f"\nSpanning tree built. (Time taken: {(end_time - start_time)})")
+
+    def _hdbscan_hierarchical_cluster(self):
+        start_time = datetime.now()
+        print("Beginning clustering of decks with HDBSCAN* method...")
+
+        forest = DisjointSetForest(self.decks_and_clusters.values(), self.spanning_tree_distances)
+        forest.union_find()
+
+        forest.condense_tree()
+
+        forest.select_clusters_cohesion(self.card_counter)
+
+        end_time = datetime.now()
+        print(f"\nFinished clustering. (Time taken: {(end_time - start_time)})")
+
+        return forest
 
     def cluster_hdbscan(self):
         # Initial similarity matrix build
@@ -338,7 +567,9 @@ class ClusterEngine:
 
         self._build_spanning_tree()
 
-        pass
+        forest = self._hdbscan_hierarchical_cluster()
+        self.decks_and_clusters = {c.id: c for c in forest.selected_clusters}
+        self.rogue_decks = forest.rogue_decks
 
 
     def cluster(self, cluster_method=ClusterMethod.HDBSCAN):

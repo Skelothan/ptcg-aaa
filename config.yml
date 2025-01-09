@@ -17,9 +17,9 @@ SIMILARITY_METHOD: "get_deck_max_possible_inclusion_weighted_Jaccard"
 
 # UPGMA only. Valid range: 0 - 0.5 (only identical decks)
 CLUSTER_SIMILARITY_THRESHOLD: 0.25
-# UPGMA only, for now. Minimum number of decks in a cluster.
+# Minimum number of decks in a cluster.
 ROGUE_DECK_THRESHOLD: 5
 
 # HDBSCAN only. Used to estimate cluster density. 
 # Bigger values makes decks more likely to be considered rogue.
-K_THRESHOLD: 8
+K_THRESHOLD: 16
