@@ -140,10 +140,20 @@ def print_card_usage_report(card_counter: deck.CardCounter):
     print(f"Saved CSV report to {filename}.")
 
 
-def compute_archetypes(decks: dict[str: deck.Deck], card_counter: deck.CardCounter) -> cluster.ClusterEngine:
-    cluster_engine = cluster.ClusterEngine(card_counter, decks)
+def suggest_k_threshold(decks: dict[str: deck.Deck], card_counter: deck.CardCounter):
+    cluster_engine = cluster.UPGMAClusterEngine(card_counter, decks)
 
-    cluster_engine.cluster_upgma()
+    cluster_engine._auto_cluster_identical_decks()
+
+    suggestion = sorted(cluster_engine.decks_and_clusters.values(), key=lambda d: d.num_decks, reverse=True)[0].num_decks + 1
+    print(f"K-threshold must be at least {suggestion} (probably oughta be more than that though)")
+
+
+def compute_archetypes(decks: dict[str: deck.Deck], card_counter: deck.CardCounter) -> cluster.ClusterEngine:
+    # TODO: make cluster engine configurable
+    cluster_engine = cluster.HDBSCANClusterEngine(card_counter, decks)
+
+    cluster_engine.cluster()
 
     return cluster_engine    
 
@@ -165,19 +175,19 @@ def main():
         if card_counter is None:
             print("""Please choose an option:
                 == Download data == 
-                1. Download tournament results
+                D1. Download tournament results
                   
                 == Process data == 
-                2. Load decks
+                P2. Load decks
                   
                 0. Exit
                 """)
 
             option = input("> ")
             
-            if option == "1":
+            if option == "d1":
                 download_tournament_results()
-            elif option == "2":
+            elif option == "p2":
                 decks, card_counter = load_decks()
             else:
                 print("Goodbye!")
@@ -185,27 +195,30 @@ def main():
         elif cluster_engine is None:
             print("""Please choose an option:
                 == Download data == 
-                1. Download tournament results
+                D1. Download tournament results
                   
                 == Process data == 
-                2. Load decks
-                3. Compute deck archetypes
+                P1. Suggest K-threshold
+                P2. Load decks
+                P3. Compute deck archetypes
                   
                 == Reports ==
-                6. Print card usage report
+                R1. Print card usage report
                 
                 0. Exit
                 """)
 
             option = input("> ")
             
-            if option == "1":
+            if option == "d1":
                 download_tournament_results()
-            elif option == "2":
+            elif option == "p1":
+                suggest_k_threshold(decks, card_counter)
+            elif option == "p2":
                 decks, card_counter = load_decks()
-            elif option == "3":
+            elif option == "p3":
                 cluster_engine = compute_archetypes(decks, card_counter)
-            elif option == "6":
+            elif option == "r1":
                 print_card_usage_report(card_counter)
             else:
                 print("Goodbye!")
@@ -213,38 +226,50 @@ def main():
         else:
             print("""Please choose an option:
                 == Download data == 
-                1.  Download tournament results
+                D1. Download tournament results
                   
                 == Process data == 
-                2.  Load decks
-                3.  Compute deck archetypes
-                4.  Rename archetypes
-               [5.  TBD: Compute archetype variants]
+                P1. Suggest K-threshold
+                P2. Load decks
+                P3. Compute deck archetypes
+                P4. Rename archetypes
                   
                 == Reports ==
-                6.  Print card usage report
-                7.  Print archetype report
-               [8.  TBD: Print rogue deck report]
-               [9.  TBD: Print archetype variant report]
-               [10. TBD: Print deck spiciness report]
+                R0. Print all reports
+                R1. Print card usage report
+                R2. Print archetype report
+                R3. Print rogue deck report
+                R4. Print metagame report
+               [R5. TBD: Print deck spiciness report]
                 
                 X. Exit
                 """)
 
-            option = input("> ")
+            option = input("> ").lower()
             
-            if option == "1":
+            if option == "d1":
                 download_tournament_results()
-            elif option == "2":
+            elif option == "p1":
+                suggest_k_threshold()
+            elif option == "p2":
                 decks, card_counter = load_decks()
-            elif option == "3":
+            elif option == "p3":
                 cluster_engine = compute_archetypes(decks, card_counter)
-            elif option == "4":
+            elif option == "p4":
                 cluster_engine.rename_archetypes()
-            elif option == "6":
+            elif option == "r0":
                 print_card_usage_report(card_counter)
-            elif option == "7":
                 cluster_engine.print_cluster_report()
+                cluster_engine.print_rogue_deck_report()
+                cluster_engine.print_metagame_report()
+            elif option == "r1":
+                print_card_usage_report(card_counter)
+            elif option == "r2":
+                cluster_engine.print_cluster_report()
+            elif option == "r3":
+                cluster_engine.print_rogue_deck_report()
+            elif option == "r4":
+                cluster_engine.print_metagame_report()
             else:
                 print("Goodbye!")
                 exit(0)
