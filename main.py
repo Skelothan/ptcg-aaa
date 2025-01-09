@@ -233,13 +233,13 @@ def main():
                 P2. Load decks
                 P3. Compute deck archetypes
                 P4. Rename archetypes
-               [P5. TBD: Compute archetype variants]
                   
                 == Reports ==
+                R0. Print all reports
                 R1. Print card usage report
                 R2. Print archetype report
-               [R3. TBD: Print rogue deck report]
-               [R4. TBD: Print archetype variant report]
+                R3. Print rogue deck report
+                R4. Print metagame report
                [R5. TBD: Print deck spiciness report]
                 
                 X. Exit
@@ -257,10 +257,19 @@ def main():
                 cluster_engine = compute_archetypes(decks, card_counter)
             elif option == "p4":
                 cluster_engine.rename_archetypes()
+            elif option == "r0":
+                print_card_usage_report(card_counter)
+                cluster_engine.print_cluster_report()
+                cluster_engine.print_rogue_deck_report()
+                cluster_engine.print_metagame_report()
             elif option == "r1":
                 print_card_usage_report(card_counter)
             elif option == "r2":
                 cluster_engine.print_cluster_report()
+            elif option == "r3":
+                cluster_engine.print_rogue_deck_report()
+            elif option == "r4":
+                cluster_engine.print_metagame_report()
             else:
                 print("Goodbye!")
                 exit(0)

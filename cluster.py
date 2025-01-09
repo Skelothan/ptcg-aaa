@@ -446,7 +446,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
                 longest_table_line_length = longest_card_name_length + len(" | Weight | Avg. count")
                 archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
 
-                file.write(f"Archetype {archetype_count}: {archetype.title} ({archetype.num_decks} decks)\n")
+                file.write(f"Archetype {archetype_count}: {archetype.title} ({archetype.num_decks} decks | {round(archetype.num_decks / len(self.original_decks) * 100, 1)}%)\n")
                 file.write("-" * longest_table_line_length + "\n")
 
                 longest_card_name_length = max(len(max(archetype.decklist.keys(), key=len)), len("Card Name"))
@@ -460,6 +460,59 @@ class ClusterEngine(metaclass=abc.ABCMeta):
                 file.write("-" * longest_table_line_length + "\n\n\n")
 
         print(f"Saved archetype report to {filename}.")
+
+    def print_rogue_deck_report(self):
+        """
+        Prints a list of all rogue decks.
+        """
+        archetype_count = 0
+        filename = f"reports/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}_rogue_decks.txt"
+        with open(filename, "w") as file:
+            file.write(f"Rogue Deck Report: {len(self.rogue_decks)} rogue decks\n\n")
+            for deck in self.rogue_decks:
+                archetype_count += 1
+                longest_card_name_length = max(len(max(deck.decklist.keys(), key=len)), len("Card Name"))
+                longest_table_line_length = longest_card_name_length + len(" | Weight | Count")
+                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(deck.decklist).items(), key=lambda p: p[1], reverse=True)
+
+                file.write(f"{deck.title}\n")
+                file.write("-" * longest_table_line_length + "\n")
+
+                longest_card_name_length = max(len(max(deck.decklist.keys(), key=len)), len("Card Name"))
+                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(deck.decklist).items(), key=lambda p: p[1], reverse=True)
+                
+                file.write(f"{"Card Name".ljust(longest_card_name_length)} | {"Weight"} | {"Count"}\n")
+                file.write(f"{"-" * longest_card_name_length} | {"------"} | {"-----"}\n")
+                for card, count in archetype_cards:
+                    file.write(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get("REPORT_DECIMAL_ROUNDING"))).ljust(4, "0").rjust(6)} | {str(round(deck.decklist.get(card), CONFIG.get("REPORT_DECIMAL_ROUNDING"))).rjust(5)}\n")
+                
+                file.write("-" * longest_table_line_length + "\n\n\n")
+
+        print(f"Saved rogue deck report to {filename}.")
+    
+    def print_metagame_report(self):
+        archetype_count = 0
+        filename = f"reports/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}_metagame.txt"
+        with open(filename, "w") as file:
+            file.write("Archetype meta share:\n")
+            for archetype in sorted(self.clusters.values(), key=lambda a: a.num_decks, reverse=True):
+                if archetype.num_decks < CONFIG.get("ROGUE_DECK_THRESHOLD"):
+                    continue
+                archetype_count += 1
+                file.write(f"Archetype {str(archetype_count).rjust(2)}: {archetype.title} ({str(archetype.num_decks).rjust(3)} decks | {str(round(archetype.num_decks / len(self.original_decks) * 100, 1)).rjust(4)}%)\n")
+
+            file.write(f"\n\nRogue deck percentage: {round(len(self.rogue_decks) / len(self.original_decks) * 100, 1)} %\n")
+
+            min_majority_count = 0
+            min_majority_share = 0
+            for archetype in sorted(self.clusters.values(), key=lambda a: a.num_decks, reverse=True):
+                min_majority_share += archetype.num_decks / len(self.original_decks)
+                min_majority_count += 1
+                if min_majority_count >= 0.5:
+                    break
+            file.write(f"\nMinimum majority count: {min_majority_count} %\n")
+
+        print(f"Saved metagame report to {filename}.")
 
     @abc.abstractmethod
     def cluster():
