@@ -141,17 +141,17 @@ def print_card_usage_report(card_counter: deck.CardCounter):
 
 
 def suggest_k_threshold(decks: dict[str: deck.Deck], card_counter: deck.CardCounter):
-    cluster_engine = cluster.ClusterEngine(card_counter, decks)
+    cluster_engine = cluster.UPGMAClusterEngine(card_counter, decks)
 
     cluster_engine._auto_cluster_identical_decks()
 
     suggestion = sorted(cluster_engine.decks_and_clusters.values(), key=lambda d: d.num_decks, reverse=True)[0].num_decks + 1
-    print(f"Suggested K-threshold: at least {suggestion}")
-
+    print(f"K-threshold must be at least {suggestion} (probably oughta be more than that though)")
 
 
 def compute_archetypes(decks: dict[str: deck.Deck], card_counter: deck.CardCounter) -> cluster.ClusterEngine:
-    cluster_engine = cluster.ClusterEngine(card_counter, decks)
+    # TODO: make cluster engine configurable
+    cluster_engine = cluster.HDBSCANClusterEngine(card_counter, decks)
 
     cluster_engine.cluster()
 
