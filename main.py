@@ -43,6 +43,8 @@ def download_tournament_results():
 
     Delays by 0.1 second in between each request pair to avoid flooding LimitlessTCG's API.
     """
+    print("Preparing list of tournaments from raw data...")
+
     with open(f"raw_data/{CONFIG.get("TOURNAMENT_LIST")}") as tournament_file:
         tournaments = json.load(tournament_file)
         tournaments_filtered = filter(
@@ -52,12 +54,15 @@ def download_tournament_results():
             tournaments
         )
     
+    start_time = datetime.now()
+    print("Downloading tournament details and decklists from Limitless...")
     for tournament in tournaments_filtered:
 
         # If we haven't downloaded the tournament details, download them
         details_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}/{tournament.get("id")}_details.json"
         if not os.path.isfile(details_path):
-            logger.info(f"Downloading details for {tournament.get("name")} [{tournament.get("id")}]")
+            download_message = f"  Downloading details for {tournament.get("name")} [{tournament.get("id")}]"
+            print(download_message + " " * (os.get_terminal_size().columns - len(download_message) - 24), end="\r")
             details_response = requests.get(f"https://play.limitlesstcg.com/api/tournaments/{tournament.get("id")}/details?key={API_KEY}")
             with open(details_path, "w") as details_file:
                 details_file.write(details_response.text)
@@ -71,12 +76,16 @@ def download_tournament_results():
                 details = json.load(details_file)
 
             if details.get("decklists"):
-                logger.info(f"Downloading standings for {tournament.get("name")} [{tournament.get("id")}]")
+                download_message = f"  Downloading standings for {tournament.get("name")} [{tournament.get("id")}]"
+                print(download_message + " " * (os.get_terminal_size().columns - len(download_message) - 24), end="\r")
                 standings_response = requests.get(f"https://play.limitlesstcg.com/api/tournaments/{tournament.get("id")}/standings?key={API_KEY}")
                 with open(standings_path, "w") as standings_file:
                     standings_file.write(standings_response.text)
                 # Wait a bit, as to not flood Limitless's API
                 time.sleep(0.1)
+
+    end_time = datetime.now()
+    print(f"\nDone. (Time taken: {end_time - start_time})")
 
 
 def load_decks_from_files() -> dict[str, deck.Deck]:
@@ -86,6 +95,7 @@ def load_decks_from_files() -> dict[str, deck.Deck]:
     decks = {}
 
     start_time = datetime.now()
+    tournament_count = 0
     print("Loading decks from standings files...")
     dir_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}"
     for file_path in os.listdir(dir_path):
@@ -95,6 +105,7 @@ def load_decks_from_files() -> dict[str, deck.Deck]:
                 details = json.load(details_file)
             with open(f"{dir_path}/{file_path}", "r") as standings_file:
                 standings = json.load(standings_file)
+                tournament_count += 1
                 load_message = f"\r  Loading {len(standings)} deck(s) from tournament {details.get("name")}"
                 print(load_message + " " * (os.get_terminal_size().columns - len(load_message) - 24), end="")
                 for player in standings:
@@ -104,7 +115,7 @@ def load_decks_from_files() -> dict[str, deck.Deck]:
                     decks[d.id] = d
 
     end_time = datetime.now()
-    print(f"\nFinished loading {len(decks)} decks. (Time taken: {(end_time - start_time)})")
+    print(f"\nFinished loading {len(decks)} decks from {tournament_count} tournaments. (Time taken: {(end_time - start_time)})")
 
     return decks
 
