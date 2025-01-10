@@ -15,7 +15,7 @@ import multiprocessing.queues as mpq
 from typing import Iterable
 
 
-class NestingSet:
+class ClusterHierarchyNode:
     """Set wrapper which keeps track of how many elements are in its great-great-etc. grandchildren.
 
     It might be possible to rework this with 2-tuples, since the set here never has more than two elements.
@@ -39,11 +39,11 @@ class NestingSet:
         The average similarity of each of this `deck_cluster`'s components to it. Doesn't really get used, but it's here just in case.
     """
 
-    def __init__(self, s: Iterable, distance: float):
-        self.set: set[deck.Deck | NestingSet] = set(s)
+    def __init__(self, s: tuple[deck.Deck | ClusterHierarchyNode, deck.Deck | ClusterHierarchyNode], distance: float):
+        self._children = s
 
         self.size = 0
-        self.contents: set[deck.Deck] = set()
+        self.contents: set[deck.Deck] = set() # This maybe could be a tuple
         for i in s:
             if hasattr(i, "size") and hasattr(i, "contents"):
                 self.size += i.size
@@ -57,26 +57,12 @@ class NestingSet:
         self.deck_cluster: deck.DeckCluster
         self.cohesion: float
 
-    def __hash__(self):
-        return hash(tuple(sorted(self.contents)))
-    
-    def add(self, i):
-        self.set.add(i)
-        if hasattr(i, "size") and hasattr(i, "contents"):
-            self.size += i.size
-            self.contents = self.contents.union(i.contents)
-        else:
-            self.size += 1
-            self.contents.add(i)
+    @property
+    def children(self):
+        return self._children
 
-    def remove(self, i):
-        self.set.remove(i)
-        if hasattr(i, "size") and hasattr(i, "contents"):
-            self.size -= i.size
-            self.contents = self.contents.difference(i.contents)
-        else:
-            self.size -= 1
-            self.contents.remove(i)
+    def __hash__(self):
+        return hash(self.children)
 
     def __repr__(self) -> str:
         if self.stability:
@@ -86,8 +72,8 @@ class NestingSet:
         return f"<NestingSet: size {self.size}>"
 
 
-class DisjointSetForest():
-    """ `NestingSet` forest used to create clusters out of linkage data.
+class ClusterHierarchy():
+    """ Data structure for representing the cluster hierarchy.
     
     Attributes
     ----------
@@ -111,11 +97,11 @@ class DisjointSetForest():
         Linkages should be a heap.
         '''
 
-        self.data: set[deck.Deck | NestingSet] = set(data)
+        self.data: set[deck.Deck | ClusterHierarchyNode] = set(data)
         self.linkages = linkages
 
-        self.root_node: NestingSet
-        self.condensed_tree: dict[NestingSet, tuple[NestingSet, NestingSet]] = {}
+        self.root_node: ClusterHierarchyNode
+        self.condensed_tree: dict[ClusterHierarchyNode, tuple[ClusterHierarchyNode, ClusterHierarchyNode]] = {}
         
         self.selected_clusters: list[deck.DeckCluster] = []
         self.rogue_decks: set[deck.Deck] = set(data)
@@ -130,7 +116,7 @@ class DisjointSetForest():
             s1 = None
             s2 = None
             for s in self.data:
-                if isinstance(s, NestingSet):
+                if isinstance(s, ClusterHierarchyNode):
                     if d1 in s.contents:
                         s1 = s
                     if d2 in s.contents:
@@ -146,44 +132,44 @@ class DisjointSetForest():
             if s1 == s2: # Don't do anything if the two are already part of the same parent
                 break
             else:
-                merged_set = NestingSet((s1, s2), distance)
+                merged_set = ClusterHierarchyNode((s1, s2), distance)
                 self.data.remove(s1)
                 self.data.remove(s2)
                 self.data.add(merged_set)
             
             print(f"  Building cluster hierarchy... (Progress: {total_size - len(self.data) + 1}/{total_size})", end="\r")
 
-        self.root_node: NestingSet = self.data.pop()
+        self.root_node: ClusterHierarchyNode = self.data.pop()
         print("")
 
-    def _do_condense_tree(self, nesting_set: NestingSet, parent: NestingSet):
+    def _do_condense_tree(self, nesting_set: ClusterHierarchyNode, parent: ClusterHierarchyNode):
         print(f"  Condensing cluster hierarchy...", end="\r")
 
-        def mark_death_distances(item: NestingSet | deck.Deck, distance: float):
-            if isinstance(item, NestingSet):
+        def mark_death_distances(item: ClusterHierarchyNode | deck.Deck, distance: float):
+            if isinstance(item, ClusterHierarchyNode):
                 for d in item.contents:
                     d.death_distance = distance
             else:
                 item.death_distance = distance
 
-        item1, item2 = tuple(nesting_set.set)
+        item1, item2 = tuple(nesting_set.children)
 
         if all([
-            isinstance(item1, NestingSet) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
-            isinstance(item2, NestingSet) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
+            isinstance(item1, ClusterHierarchyNode) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
+            isinstance(item2, ClusterHierarchyNode) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
             ]):
             self.condensed_tree[parent] = (item1, item2)
             self._do_condense_tree(item1, item1)
             self._do_condense_tree(item2, item2)
         elif all([
-            isinstance(item1, NestingSet) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
-            not(isinstance(item2, NestingSet) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"])
+            isinstance(item1, ClusterHierarchyNode) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
+            not(isinstance(item2, ClusterHierarchyNode) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"])
         ]):
             mark_death_distances(item2, nesting_set.distance)
             self._do_condense_tree(item1, parent)
         elif all([
-            not(isinstance(item1, NestingSet) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"]),
-            isinstance(item2, NestingSet) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
+            not(isinstance(item1, ClusterHierarchyNode) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"]),
+            isinstance(item2, ClusterHierarchyNode) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
         ]):
             mark_death_distances(item1, nesting_set.distance)
             self._do_condense_tree(item2, parent)
@@ -197,7 +183,7 @@ class DisjointSetForest():
         self._do_condense_tree(self.root_node, self.root_node)
         print("")
 
-    def _do_select_clusters(self, considering: NestingSet, selected_clusters: set[NestingSet]):
+    def _do_select_clusters(self, considering: ClusterHierarchyNode, selected_clusters: set[ClusterHierarchyNode]):
         if considering in self.condensed_tree.keys():
             c1, c2 = self.condensed_tree[considering]
             self._do_select_clusters(c1, selected_clusters)
@@ -264,14 +250,15 @@ class DisjointSetForest():
         all_sets = {x for y in self.condensed_tree.values() for x in y}
         all_sets.add(self.root_node)
         
-        for c in all_sets:
-            c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
-            # TODO: make the weighting function configurable
-            c.cohesion = sum([card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(c.deck_cluster, d) for d in c.deck_cluster.decks]) / len(c.deck_cluster.decks)
+        # for c in all_sets:
+        #     c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
+        #     # TODO: make the weighting function configurable
+        #     c.cohesion = sum([card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(c.deck_cluster, d) for d in c.deck_cluster.decks]) / len(c.deck_cluster.decks)
 
         selected_clusters = all_sets - self.condensed_tree.keys()
 
         for c in selected_clusters:
+            c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
             self.selected_clusters.append(c.deck_cluster)
             self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
 
@@ -790,7 +777,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Beginning clustering of decks with HDBSCAN* method...")
 
-        forest = DisjointSetForest(self.decks_and_clusters.values(), self.spanning_tree_distances)
+        forest = ClusterHierarchy(self.decks_and_clusters.values(), self.spanning_tree_distances)
         forest.union_find()
 
         forest.condense_tree()

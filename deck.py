@@ -250,6 +250,7 @@ class Deck(DeckLike):
 
         self._decklist = Counter(decklist_dict)
 
+    # Could try caching this somehow
     @property
     def k_distance(self) -> float:
         if len(self.similarities) < CONFIG["K_THRESHOLD"]:
@@ -524,6 +525,7 @@ class CardCounter:
         else:
             return 4 / DECK_SIZE
 
+    # Could put a LRU cache on this function
     def get_card_percent_of_max_usage(self, card: str) -> float:
         """
         Returns the ratio of a card's actual usage to its maximum possible usage.
