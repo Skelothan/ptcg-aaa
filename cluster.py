@@ -697,8 +697,8 @@ class HDBSCANClusterEngine(ClusterEngine):
             pair, similarity = t
             d1 = self.original_decks[pair[0]]
             d2 = self.original_decks[pair[1]]
-            mut_reach = max([d1.k_distance(CONFIG["K_THRESHOLD"]), d2.k_distance(CONFIG["K_THRESHOLD"]), 0.5 - similarity])
-            output.put(((min(d1.id, d2.id), max(d1.id, d2.id)), mut_reach))
+            mut_reach = max(d1.k_distance, d2.k_distance, 0.5 - similarity)
+            output.put((pair, mut_reach))
 
     def _calculate_mutual_reachabilities(self):
         """
