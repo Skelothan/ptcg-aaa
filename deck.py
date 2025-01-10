@@ -9,6 +9,8 @@ from datetime import date
 
 import yaml
 
+from config import CONFIG
+
 DECK_SIZE = 60
 
 BASIC_ENERGY_NAMES = {
@@ -248,10 +250,11 @@ class Deck(DeckLike):
 
         self._decklist = Counter(decklist_dict)
 
-    def k_distance(self, k) -> float:
-        if len(self.similarities) < k:
+    @property
+    def k_distance(self) -> float:
+        if len(self.similarities) < CONFIG["K_THRESHOLD"]:
             raise ValueError
-        return 0.5 - heapq.nlargest(k, self.similarities)[-1][0]
+        return 0.5 - heapq.nlargest(CONFIG["K_THRESHOLD"], self.similarities)[-1][0]
 
     def __repr__(self) -> str:
         return f"<Deck: {self.title}>"
