@@ -383,10 +383,6 @@ class ClusterEngine(metaclass=abc.ABCMeta):
             else:
                 num_outputs_received += 1
                 self.similarities[output[0]] = output[1]
-                d1 = self.decks_and_clusters[output[0][0]]
-                d2 = self.decks_and_clusters[output[0][1]]
-                heapq.heappush(d1.similarities, (output[1], d2))
-                heapq.heappush(d2.similarities, (output[1], d1))
                 print(f"  Calculated similarity for {output[0][0].ljust(32)} and {output[0][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
 
         end_time = datetime.now()
@@ -657,6 +653,55 @@ class HDBSCANClusterEngine(ClusterEngine):
 
         self.spanning_tree_root: deck.Deck
         self.spanning_tree_distances: list[tuple[float, deck.Deck, deck.Deck]] = []  
+
+    def _build_initial_similarity_matrix(self):
+        """
+        Fills `similarities` with the similarity of each pair of decks/clusters in the initial deck and cluster list.
+
+        Multiprocessed to improve efficiency. The number of subprocesses is equal to CONFIG["NUM_THREADS"] plus one, plus the main process.
+        """
+        start_time = datetime.now()
+        print("Building initial similarity matrix...")
+
+        similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
+        
+        manager = mp.Manager()
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
+
+        processes = []
+
+        # Start task queue-filling producer process
+        producer_process = mp.Process(target=self._fill_queue, args=(tasks, CONFIG.get("NUM_THREADS")))
+        processes.append(producer_process)
+        producer_process.start()
+
+        # Start task queue-emptying worker processes
+        for _ in range(CONFIG.get("NUM_THREADS")):
+            process = mp.Process(target=self._compute_similarities, args=(tasks, outputs))
+            processes.append(process)
+            process.start()
+
+        # Main process works on emptying output queue
+        num_finished_processes = 0
+        num_outputs_received = 0
+        while True:
+            output = outputs.get()
+            if output is None:
+                num_finished_processes += 1
+                if num_finished_processes >= CONFIG.get("NUM_THREADS"):
+                    break
+            else:
+                num_outputs_received += 1
+                self.similarities[output[0]] = output[1]
+                d1: deck.Deck = self.decks_and_clusters[output[0][0]]
+                d2: deck.Deck = self.decks_and_clusters[output[0][1]]
+                d1.k_similarity_push((output[1], d2))
+                d2.k_similarity_push((output[1], d1))
+                print(f"  Calculated similarity for {output[0][0].ljust(32)} and {output[0][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
+
+        end_time = datetime.now()
+        print(f"\nSimilarity matrix built. (Time taken: {(end_time - start_time)})")
 
     def _mut_reach_fill_queue(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], num_threads):
         """
