@@ -829,12 +829,11 @@ class HDBSCANClusterEngine(ClusterEngine):
 
         while len(spanning_tree_decks) < len(self.original_decks):
             mut_reach_dist, this_deck, other_deck = heapq.heappop(tree_similarities)
-            # distance = 0.5 - self.similarities[min(this_deck.id, other_deck.id), max(this_deck.id, other_deck.id)]
             if other_deck not in spanning_tree_decks:
                 spanning_tree_decks.add(other_deck)
                 heapq.heappush(self.spanning_tree_distances, (mut_reach_dist, this_deck, other_deck))
-                tree_similarities += other_deck.mut_reach_similarities
-                heapq.heapify(tree_similarities)
+                for new_similarity in other_deck.mut_reach_similarities:
+                    heapq.heappush(tree_similarities, new_similarity)
                 print(f"  Connected {other_deck.id} to the spanning tree (Progress: {len(spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
 
         end_time = datetime.now()
