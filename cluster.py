@@ -504,11 +504,16 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         filename = f"reports/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}_metagame.txt"
         with open(filename, "w") as file:
             file.write("Archetype meta share:\n")
+
+            longest_archetype_name_length = len(max(self.clusters.values(), key=lambda a: len(a.title)).title)
+            longest_num_decks_length = len(str(max(self.clusters.values(), key=lambda a: a.num_decks).num_decks))
+            archetype_count_length = len(str(len(self.clusters.values())))
+
             for archetype in sorted(self.clusters.values(), key=lambda a: a.num_decks, reverse=True):
                 if archetype.num_decks < CONFIG.get("ROGUE_DECK_THRESHOLD"):
                     continue
                 archetype_count += 1
-                file.write(f"Archetype {str(archetype_count).rjust(2)}: {archetype.title} ({str(archetype.num_decks).rjust(3)} decks | {str(round(archetype.num_decks / len(self.original_decks) * 100, 1)).rjust(4)}%)\n")
+                file.write(f"Archetype {str(archetype_count).rjust(archetype_count_length)}: {archetype.title.ljust(longest_archetype_name_length)} ({str(archetype.num_decks).rjust(longest_num_decks_length)} decks | {str(round(archetype.num_decks / len(self.original_decks) * 100, 1)).rjust(4)}%)\n")
 
             file.write(f"\n\nRogue deck percentage: {round(len(self.rogue_decks) / len(self.original_decks) * 100, 1)} %\n")
 
@@ -517,9 +522,9 @@ class ClusterEngine(metaclass=abc.ABCMeta):
             for archetype in sorted(self.clusters.values(), key=lambda a: a.num_decks, reverse=True):
                 min_majority_share += archetype.num_decks / len(self.original_decks)
                 min_majority_count += 1
-                if min_majority_count >= 0.5:
+                if min_majority_share >= 0.5:
                     break
-            file.write(f"\nMinimum majority count: {min_majority_count} %\n")
+            file.write(f"\nMinimum majority count: {min_majority_count} \n")
 
         print(f"Saved metagame report to {filename}.")
 
