@@ -6,6 +6,7 @@ import heapq
 import re
 from collections import Counter
 from datetime import date
+from functools import lru_cache
 
 import yaml
 
@@ -77,7 +78,6 @@ class DeckLike(metaclass=abc.ABCMeta):
     """
 
     def __init__(self):
-        self.similarities: list[tuple[float, Deck]]
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -172,11 +172,12 @@ class Deck(DeckLike):
         self.tournament_name = tournament_name
         self.date = date
         self.format = format
-        self.similarities = []
         self.mut_reach_similarities: list[tuple[float, Deck, Deck]] = []
 
         # Used during HDBSCAN* clustering
         self.death_distance: float
+        self.k_most_similarities: list[tuple[float, Deck]] = []
+        self._k_distance: float | None = None
 
     def load_decklist_ptcgl(self, decklist: str):
         """
@@ -249,13 +250,15 @@ class Deck(DeckLike):
             decklist_dict[card_name] = card.get("count")
 
         self._decklist = Counter(decklist_dict)
+    
+    def k_similarity_push(self, similarity):
+        self.k_most_similarities.append(similarity)
+        self.k_most_similarities = sorted(self.k_most_similarities, reverse=True)[:CONFIG["K_THRESHOLD"]]
 
     @property
     def k_distance(self) -> float:
-        if len(self.similarities) < CONFIG["K_THRESHOLD"]:
-            raise ValueError
-        return 0.5 - heapq.nlargest(CONFIG["K_THRESHOLD"], self.similarities)[-1][0]
-
+        return 0.5 - self.k_most_similarities[-1][0]
+        
     def __repr__(self) -> str:
         return f"<Deck: {self.title}>"
     
@@ -307,7 +310,6 @@ class DeckCluster(DeckLike):
         self._title = f"Cluster {self.number}"
         DeckCluster.cluster_number += 1
         self.decks: set[Deck] = set()
-        self.similarities = []
 
     def add_deck(self, deck: Deck):
         self.decks.add(deck)
@@ -524,6 +526,7 @@ class CardCounter:
         else:
             return 4 / DECK_SIZE
 
+    @lru_cache(maxsize=128)
     def get_card_percent_of_max_usage(self, card: str) -> float:
         """
         Returns the ratio of a card's actual usage to its maximum possible usage.
