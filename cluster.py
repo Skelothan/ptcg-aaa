@@ -66,10 +66,10 @@ class ClusterHierarchyNode:
 
     def __repr__(self) -> str:
         if self.stability:
-            return f"<NestingSet: size {self.size}, stability {round(self.stability, 2)}>"
+            return f"<ClusterHierarchyNode: size {self.size}, stability {round(self.stability, 2)}>"
         if self.deck_cluster and self.cohesion:
-            return f"<NestingSet({self.deck_cluster.title}): size {self.size}, cohesion {round(self.cohesion, 2)}>"
-        return f"<NestingSet: size {self.size}>"
+            return f"<ClusterHierarchyNode({self.deck_cluster.title}): size {self.size}, cohesion {round(self.cohesion, 2)}>"
+        return f"<ClusterHierarchyNode: size {self.size}>"
 
 
 class ClusterHierarchy():
@@ -106,7 +106,7 @@ class ClusterHierarchy():
         self.selected_clusters: list[deck.DeckCluster] = []
         self.rogue_decks: set[deck.Deck] = set(data)
 
-    def union_find(self):
+    def build_hierarchy(self):
         """Produces a hierarchical cluster tree out of the linkage data."""
         total_size = len(self.data) - 1
 
@@ -142,45 +142,71 @@ class ClusterHierarchy():
         self.root_node: ClusterHierarchyNode = self.data.pop()
         print("")
 
-    def _do_condense_tree(self, nesting_set: ClusterHierarchyNode, parent: ClusterHierarchyNode):
-        print(f"  Condensing cluster hierarchy...", end="\r")
+    def _mark_death_distances(self, item: ClusterHierarchyNode | deck.Deck, distance: float):
+        if isinstance(item, ClusterHierarchyNode):
+            for d in item.contents:
+                d.death_distance = distance
+        else:
+            item.death_distance = distance
 
-        def mark_death_distances(item: ClusterHierarchyNode | deck.Deck, distance: float):
-            if isinstance(item, ClusterHierarchyNode):
-                for d in item.contents:
-                    d.death_distance = distance
-            else:
-                item.death_distance = distance
-
-        item1, item2 = tuple(nesting_set.children)
+    def _do_condense_tree_recursive(self, current_node: ClusterHierarchyNode, parent: ClusterHierarchyNode):
+        child1, child2 = tuple(current_node.children)
 
         if all([
-            isinstance(item1, ClusterHierarchyNode) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
-            isinstance(item2, ClusterHierarchyNode) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
+            isinstance(child1, ClusterHierarchyNode) and child1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
+            isinstance(child2, ClusterHierarchyNode) and child2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
             ]):
-            self.condensed_tree[parent] = (item1, item2)
-            self._do_condense_tree(item1, item1)
-            self._do_condense_tree(item2, item2)
+            self.condensed_tree[parent] = (child1, child2)
+            self._do_condense_tree_recursive(child1, child1)
+            self._do_condense_tree_recursive(child2, child2)
         elif all([
-            isinstance(item1, ClusterHierarchyNode) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
-            not(isinstance(item2, ClusterHierarchyNode) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"])
+            isinstance(child1, ClusterHierarchyNode) and child1.size >= CONFIG["ROGUE_DECK_THRESHOLD"],
+            not(isinstance(child2, ClusterHierarchyNode) and child2.size >= CONFIG["ROGUE_DECK_THRESHOLD"])
         ]):
-            mark_death_distances(item2, nesting_set.distance)
-            self._do_condense_tree(item1, parent)
+            self._mark_death_distances(child2, current_node.distance)
+            self._do_condense_tree_recursive(child1, parent)
         elif all([
-            not(isinstance(item1, ClusterHierarchyNode) and item1.size >= CONFIG["ROGUE_DECK_THRESHOLD"]),
-            isinstance(item2, ClusterHierarchyNode) and item2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
+            not(isinstance(child1, ClusterHierarchyNode) and child1.size >= CONFIG["ROGUE_DECK_THRESHOLD"]),
+            isinstance(child2, ClusterHierarchyNode) and child2.size >= CONFIG["ROGUE_DECK_THRESHOLD"]
         ]):
-            mark_death_distances(item1, nesting_set.distance)
-            self._do_condense_tree(item2, parent)
+            self._mark_death_distances(child1, current_node.distance)
+            self._do_condense_tree_recursive(child2, parent)
         else:
-            mark_death_distances(item1, nesting_set.distance)
-            mark_death_distances(item2, nesting_set.distance)
+            self._mark_death_distances(child1, current_node.distance)
+            self._mark_death_distances(child2, current_node.distance)
+
+    def _do_condense_tree_iterative(self):
+        tasks: list[tuple[ClusterHierarchyNode, ClusterHierarchyNode]] = []
+        tasks.append((self.root_node, self.root_node))
+
+        while len(tasks) > 0:
+            current_node, parent = tasks.pop()
+            child1, child2 = tuple(current_node.children)
+
+            child_sizes = 2 * (isinstance(child1, ClusterHierarchyNode) and child1.size >= CONFIG["ROGUE_DECK_THRESHOLD"]) + \
+                (isinstance(child2, ClusterHierarchyNode) and child2.size >= CONFIG["ROGUE_DECK_THRESHOLD"])
+            
+            match child_sizes:
+                case 3: # True split
+                    self.condensed_tree[parent] = (child1, child2)
+                    tasks.append((child2, child2))
+                    tasks.append((child1, child1))
+                case 2:
+                    self._mark_death_distances(child2, current_node.distance)
+                    tasks.append((child1, parent))
+                case 1:
+                    self._mark_death_distances(child1, current_node.distance)
+                    tasks.append((child2, parent))
+                case 0:
+                    self._mark_death_distances(child1, current_node.distance)
+                    self._mark_death_distances(child2, current_node.distance)
+                case _:
+                    raise ValueError(f"Got an unusual child size case when looking at node {current_node} (parent {parent})")
 
     def condense_tree(self):
         """Condenses the cluster hierarchy into large blobs by ignoring small groupings."""
-        # TODO: might need to make this non-recursive due to stack depth limitations on larger datasets
-        self._do_condense_tree(self.root_node, self.root_node)
+        print(f"  Condensing cluster hierarchy...", end="\r")
+        self._do_condense_tree_iterative()
         print("")
 
     def _do_select_clusters(self, considering: ClusterHierarchyNode, selected_clusters: set[ClusterHierarchyNode]):
@@ -823,14 +849,14 @@ class HDBSCANClusterEngine(ClusterEngine):
         print("Beginning clustering of decks with HDBSCAN* method...")
 
         forest = ClusterHierarchy(self.decks_and_clusters.values(), self.spanning_tree_distances)
-        forest.union_find()
+        forest.build_hierarchy()
 
         forest.condense_tree()
 
         forest.select_clusters_cohesion(self.card_counter)
 
         end_time = datetime.now()
-        print(f"\nFinished clustering. (Time taken: {(end_time - start_time)})")
+        print(f"Finished clustering. (Time taken: {(end_time - start_time)})")
 
         return forest
 
