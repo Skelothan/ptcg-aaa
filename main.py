@@ -12,6 +12,8 @@ import time
 logger = logging.getLogger(__name__)
 
 
+PROGRAM_VERSION = (0, 1, 0)
+
 FORMAT_DATES = {
     # all formats BST-PAF
     "standard_e-g": (datetime(2023, 3, 30, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc)), 
@@ -46,7 +48,7 @@ def download_tournament_results():
     """
     print("Preparing list of tournaments from raw data...")
 
-    with open(f"raw_data/{CONFIG.get("TOURNAMENT_LIST")}") as tournament_file:
+    with open(f"raw_data/{CONFIG.get('TOURNAMENT_LIST')}") as tournament_file:
         tournaments = json.load(tournament_file)
         tournaments_filtered = filter(
             lambda t: t.get("players") >= CONFIG.get("TOURNAMENT_MIN_PLAYERS") 
@@ -60,26 +62,26 @@ def download_tournament_results():
     for tournament in tournaments_filtered:
 
         # If we haven't downloaded the tournament details, download them
-        details_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}/{tournament.get("id")}_details.json"
+        details_path = f"data/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}/{tournament.get('id')}_details.json"
         if not os.path.isfile(details_path):
-            download_message = f"  Downloading details for {tournament.get("name")} [{tournament.get("id")}]"
+            download_message = f"  Downloading details for {tournament.get('name')} [{tournament.get('id')}]"
             print(download_message + " " * (os.get_terminal_size().columns - len(download_message) - 24), end="\r")
-            details_response = requests.get(f"https://play.limitlesstcg.com/api/tournaments/{tournament.get("id")}/details?key={API_KEY}")
+            details_response = requests.get(f"https://play.limitlesstcg.com/api/tournaments/{tournament.get('id')}/details?key={API_KEY}")
             with open(details_path, "w") as details_file:
                 details_file.write(details_response.text)
             # Wait a bit, as to not flood Limitless's API
             time.sleep(0.1)
 
         # If we haven't downloaded the tournament deck lists, download them
-        standings_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}/{tournament.get("id")}_standings.json"
+        standings_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}/{tournament.get('id')}_standings.json"
         if not os.path.isfile(standings_path):
             with open(details_path, "r") as details_file:
                 details = json.load(details_file)
 
             if details.get("decklists"):
-                download_message = f"  Downloading standings for {tournament.get("name")} [{tournament.get("id")}]"
+                download_message = f"  Downloading standings for {tournament.get('name')} [{tournament.get('id')}]"
                 print(download_message + " " * (os.get_terminal_size().columns - len(download_message) - 24), end="\r")
-                standings_response = requests.get(f"https://play.limitlesstcg.com/api/tournaments/{tournament.get("id")}/standings?key={API_KEY}")
+                standings_response = requests.get(f"https://play.limitlesstcg.com/api/tournaments/{tournament.get('id')}/standings?key={API_KEY}")
                 with open(standings_path, "w") as standings_file:
                     standings_file.write(standings_response.text)
                 # Wait a bit, as to not flood Limitless's API
@@ -102,16 +104,16 @@ def load_decks_from_files() -> dict[str, deck.Deck]:
     for file_path in os.listdir(dir_path):
         filename = os.fsdecode(file_path)
         if filename.endswith("standings.json"):
-            with open(f"{dir_path}/{file_path.replace("standings", "details")}", "r") as details_file:
+            with open(f"{dir_path}/{file_path.replace('standings', 'details')}", "r") as details_file:
                 details = json.load(details_file)
             with open(f"{dir_path}/{file_path}", "r") as standings_file:
                 standings = json.load(standings_file)
                 tournament_count += 1
-                load_message = f"\r  Loading {len(standings)} deck(s) from tournament {details.get("name")}"
+                load_message = f"\r  Loading {len(standings)} deck(s) from tournament {details.get('name')}"
                 print(load_message + " " * (os.get_terminal_size().columns - len(load_message) - 24), end="")
                 for player in standings:
 
-                    d = deck.Deck(player_name=player.get("name"), tournament_name=details.get("name"), date=datetime.fromisoformat(details.get("date")), format=CONFIG.get("TOURNAMENT_FORMAT_FILTER"))
+                    d = deck.Deck(player_name=player.get("name"), tournament_name=details.get('name'), date=datetime.fromisoformat(details.get('date')), format=CONFIG.get('TOURNAMENT_FORMAT_FILTER'))
                     d.load_decklist_limitless(player.get("decklist"))
                     decks[d.id] = d
 
@@ -126,7 +128,7 @@ def load_decks() -> tuple[dict[str, deck.Deck], deck.CardCounter]:
     Read decklist data from the data/ directory and load them all into a `deck.CardCounter`.
     """
     decks = load_decks_from_files()
-    card_counter = deck.CardCounter(name=f"{CONFIG.get("TOURNAMENT_FORMAT_FILTER")} CardCounter")
+    card_counter = deck.CardCounter(name=f"{CONFIG.get('TOURNAMENT_FORMAT_FILTER')} CardCounter")
     for d in decks.values():
         card_counter.add_deck(d)
 
@@ -135,7 +137,7 @@ def load_decks() -> tuple[dict[str, deck.Deck], deck.CardCounter]:
 
 def print_card_usage_report(card_counter: deck.CardCounter):
 
-    filename = f"reports/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}_card_counts.csv"
+    filename = f"reports/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_card_counts.csv"
     with open(filename, "w") as file:
         csvwriter = csv.writer(file)
         csvwriter.writerow(["Name", "Number used", "Average copies per deck", f"% of max usage", "Number of decks with card", f"% of decks with card"])
@@ -178,10 +180,10 @@ def main():
     print("==== Pokémon TCG Automatic Archetype Analyzer ====")
     while True:
         print("")
-        print(f"Currently loaded decks: {"None" if card_counter is None else card_counter.name}")
-        print(f"Tournament list: {CONFIG.get("TOURNAMENT_LIST")}")
-        print(f"Current format: {CONFIG.get("TOURNAMENT_FORMAT_FILTER")}")
-        print(f"Minimum no. players: {CONFIG.get("TOURNAMENT_MIN_PLAYERS")}")
+        print(f"Currently loaded decks: {'None' if card_counter is None else card_counter.name}")
+        print(f"Tournament list: {CONFIG.get('TOURNAMENT_LIST')}")
+        print(f"Current format: {CONFIG.get('TOURNAMENT_FORMAT_FILTER')}")
+        print(f"Minimum no. players: {CONFIG.get('TOURNAMENT_MIN_PLAYERS')}")
         print("")
 
         if card_counter is None:

@@ -235,7 +235,7 @@ class Deck(DeckLike):
         for card in decklist.get("pokemon"):
             if card["set"] in SET_CODE_MAP.keys():
                 card["set"] = SET_CODE_MAP.get(card["set"])
-            card_name = f"{card["name"]} {card["set"]} {card["number"]}"
+            card_name = f"{card['name']} {card['set']} {card['number']}"
             if card_name in REPRINTS.keys():
                 card_name = REPRINTS.get(card_name)
             decklist_dict[card_name] = card.get("count")
