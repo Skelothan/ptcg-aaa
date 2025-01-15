@@ -419,13 +419,13 @@ class ClusterEngine(metaclass=abc.ABCMeta):
             longest_card_name_length = max(len(max(archetype.decklist.keys(), key=len)), len("Card Name"))
             # longest_table_line_length = longest_card_name_length + len(" | Weight | Avg. count")
 
-            print(f"{"Card Name".ljust(longest_card_name_length)} | {"Weight"} | {"Avg. count"}")
-            print(f"{"-" * longest_card_name_length} | {"------"} | {"----------"}")
+            print(f"{'Card Name'.ljust(longest_card_name_length)} | {'Weight'} | {'Avg. count'}")
+            print(f"{'-' * longest_card_name_length} | {'------'} | {'----------'}")
             archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
 
             i = 0
             for card, count in archetype_cards:
-                print(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get("REPORT_DECIMAL_ROUNDING"))).ljust(4, "0").rjust(6)} | {str(round(archetype.decklist.get(card), CONFIG.get("REPORT_DECIMAL_ROUNDING"))).ljust(4, "0").rjust(10)}")
+                print(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get('REPORT_DECIMAL_ROUNDING'))).ljust(4, '0').rjust(6)} | {str(round(archetype.decklist.get(card), CONFIG.get('REPORT_DECIMAL_ROUNDING'))).ljust(4, '0').rjust(10)}")
                 i += 1
                 if i >= 20:
                     break
@@ -444,7 +444,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         to the reports directory.
         """
         archetype_count = 0
-        filename = f"reports/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}_archetypes.txt"
+        filename = f"reports/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_archetypes.txt"
         with open(filename, "w") as file:
             for archetype in sorted(self.clusters.values(), key=lambda a: a.num_decks, reverse=True):
                 if archetype.num_decks < CONFIG.get("ROGUE_DECK_THRESHOLD"):
@@ -461,10 +461,10 @@ class ClusterEngine(metaclass=abc.ABCMeta):
                 longest_card_name_length = max(len(max(archetype.decklist.keys(), key=len)), len("Card Name"))
                 archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
                 
-                file.write(f"{"Card Name".ljust(longest_card_name_length)} | {"Weight"} | {"Avg. count"}\n")
-                file.write(f"{"-" * longest_card_name_length} | {"------"} | {"----------"}\n")
+                file.write(f"{'Card Name'.ljust(longest_card_name_length)} | {'Weight'} | {'Avg. count'}\n")
+                file.write(f"{'-' * longest_card_name_length} | {'------'} | {'----------'}\n")
                 for card, count in archetype_cards:
-                    file.write(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get("REPORT_DECIMAL_ROUNDING"))).ljust(4, "0").rjust(6)} | {str(round(archetype.decklist.get(card), CONFIG.get("REPORT_DECIMAL_ROUNDING"))).ljust(4, "0").rjust(10)}\n")
+                    file.write(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get('REPORT_DECIMAL_ROUNDING'))).ljust(4, '0').rjust(6)} | {str(round(archetype.decklist.get(card), CONFIG.get('REPORT_DECIMAL_ROUNDING'))).ljust(4, '0').rjust(10)}\n")
                 
                 file.write("-" * longest_table_line_length + "\n\n\n")
 
@@ -475,7 +475,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         Prints a list of all rogue decks.
         """
         archetype_count = 0
-        filename = f"reports/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}_rogue_decks.txt"
+        filename = f"reports/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_rogue_decks.txt"
         with open(filename, "w") as file:
             file.write(f"Rogue Deck Report: {len(self.rogue_decks)} rogue decks\n\n")
             for deck in self.rogue_decks:
@@ -490,10 +490,10 @@ class ClusterEngine(metaclass=abc.ABCMeta):
                 longest_card_name_length = max(len(max(deck.decklist.keys(), key=len)), len("Card Name"))
                 archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(deck.decklist).items(), key=lambda p: p[1], reverse=True)
                 
-                file.write(f"{"Card Name".ljust(longest_card_name_length)} | {"Weight"} | {"Count"}\n")
-                file.write(f"{"-" * longest_card_name_length} | {"------"} | {"-----"}\n")
+                file.write(f"{'Card Name'.ljust(longest_card_name_length)} | {'Weight'} | {'Count'}\n")
+                file.write(f"{'-' * longest_card_name_length} | {'------'} | {'-----'}\n")
                 for card, count in archetype_cards:
-                    file.write(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get("REPORT_DECIMAL_ROUNDING"))).ljust(4, "0").rjust(6)} | {str(round(deck.decklist.get(card), CONFIG.get("REPORT_DECIMAL_ROUNDING"))).rjust(5)}\n")
+                    file.write(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get('REPORT_DECIMAL_ROUNDING'))).ljust(4, '0').rjust(6)} | {str(round(deck.decklist.get(card), CONFIG.get('REPORT_DECIMAL_ROUNDING'))).rjust(5)}\n")
                 
                 file.write("-" * longest_table_line_length + "\n\n\n")
 
@@ -501,7 +501,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
     
     def print_metagame_report(self):
         archetype_count = 0
-        filename = f"reports/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}_metagame.txt"
+        filename = f"reports/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_metagame.txt"
         with open(filename, "w") as file:
             file.write("Archetype meta share:\n")
 
@@ -586,7 +586,7 @@ class UPGMAClusterEngine(ClusterEngine):
             d2 = self.decks_and_clusters[self.most_similar_pair[1]]
             cluster = d1 + d2
 
-            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Similarity: {str(round(self.greatest_similarity, 4)).ljust(6, "0")}/{CONFIG.get("CLUSTER_SIMILARITY_THRESHOLD")}) ({merge_count} merged / {len(self.decks_and_clusters)} left)", end="\r")
+            print(f"  Merging decks {d1.id.ljust(32)} and {d2.id.ljust(32)} (Similarity: {str(round(self.greatest_similarity, 4)).ljust(6, '0')}/{CONFIG.get('CLUSTER_SIMILARITY_THRESHOLD')}) ({merge_count} merged / {len(self.decks_and_clusters)} left)", end="\r")
 
             # Remove the old decks/clusters from the deck list
             del self.decks_and_clusters[d1.id]
