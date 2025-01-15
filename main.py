@@ -73,7 +73,7 @@ def download_tournament_results():
             time.sleep(0.1)
 
         # If we haven't downloaded the tournament deck lists, download them
-        standings_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}/{tournament.get('id')}_standings.json"
+        standings_path = f"data/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}/{tournament.get('id')}_standings.json"
         if not os.path.isfile(standings_path):
             with open(details_path, "r") as details_file:
                 details = json.load(details_file)
@@ -100,7 +100,7 @@ def load_decks_from_files() -> dict[str, deck.Deck]:
     start_time = datetime.now()
     tournament_count = 0
     print("Loading decks from standings files...")
-    dir_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}"
+    dir_path = f"data/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}"
     for file_path in os.listdir(dir_path):
         filename = os.fsdecode(file_path)
         if filename.endswith("standings.json"):
