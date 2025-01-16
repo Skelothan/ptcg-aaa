@@ -15,8 +15,7 @@ logger = logging.getLogger(__name__)
 PROGRAM_VERSION = (0, 1, 0)
 
 FORMAT_DATES = {
-    # all formats BST-PAF
-    "standard_e-g": (datetime(2023, 3, 30, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc)), 
+    # "standard_e-g": (datetime(2023, 3, 30, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc)), 
     # "BST-SVI":
     # "BST-PAL":
     # "BST-OBF":
@@ -24,17 +23,16 @@ FORMAT_DATES = {
     # "BST-PAR":
     # "BST-PAF":
 
-    # all formats BRS-PRE
-    "standard_f-h": (datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc)),
+    # "standard_f-h": (datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc)),
     "BRS-TEF": (datetime(2024,  3, 21, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024,  5, 23, 17, 0, 0, 0, tzinfo=timezone.utc)),
     "BRS-TWM": (datetime(2024,  5, 23, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024,  8,  1, 17, 0, 0, 0, tzinfo=timezone.utc)),
     "BRS-SFA": (datetime(2024,  8,  1, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024,  9, 12, 17, 0, 0, 0, tzinfo=timezone.utc)),
     "BRS-SCR": (datetime(2024,  9, 12, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024, 11,  7, 17, 0, 0, 0, tzinfo=timezone.utc)),
     "BRS-SSP": (datetime(2024, 11,  7, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2025,  1, 16, 17, 0, 0, 0, tzinfo=timezone.utc)),
-    "BRS-PRE": (datetime(2025,  1, 16, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc)),
+    "BRS-PRE": (datetime(2025,  1, 16, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2025,  3, 27, 17, 0, 0, 0, tzinfo=timezone.utc)),
 
     # "standard_g-i":
-    # "SVI-JTG": 
+    # "SVI-JTG": (datetime(2025,  3, 27, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc))
 }
 
 
