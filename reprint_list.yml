@@ -3,11 +3,12 @@
 # Format:
 # Reprint card name: Normalized card name
 
+# PR-SV
 Squawkabilly ex SVP 160: Squawkabily ex PAL 169
 Squawkabilly ex PR-SV 160: Squawkabily ex PAL 169
-
 Tinkaton ex PAL 240: Tinkaton ex PR-SV 31
 
+# PAF
 Pineco PAF 1: Pineco PAL 4
 Forretress ex PAF 2: Forretress ex PAL 5
 Toedscool PAF 4: Toedscool SVI 24
@@ -34,6 +35,7 @@ Noibat PAF 68: Noibat PAL 152
 Noivern ex PAF 69: Noivern ex PAL 153
 Squawkabilly ex PAF 75: Squawkabily ex PAL 169
 
+# CRZ
 Sunkern CRZ 7: Sunkern SIT 5
 Kricketot CRZ 10: Kricketot ASR 9
 Cherubi CRZ 11: Cherubi BST 7
@@ -82,5 +84,91 @@ Starly CRZ 110: Starly BRS 117
 Stoutland V CRZ 116: Stoutland V BST 117
 Greedent V CRZ 120: Greedent V FST 217
 
+# SCR
 Venusaur ex SCR 1: Venusaur ex MEW 3
 Blastoise ex SCR 30: Blastoise ex MEW 9
+
+# PRE
+Leafeon PRE 5: Leafeon TWM 11
+Cottonee PRE 7: Cottonee TEF 14
+Whimsicott PRE 8: Whimsicott TEF 15
+Applin PRE 9: Applin SCR 12
+Dipplin PRE 10: Dipplin TWM 18
+Hydrapple ex PRE 11: Hydrapple ex SCR 14
+Teal Mask Ogerpon ex PRE 12: Teal Mask Ogerpon ex TWM 25
+Flareon PRE 13: Flareon MEW 136
+Hearthflame Mask Ogerpon ex PRE 17: Hearthflame Mask Ogerpon ex TWM 40
+Goldeen PRE 20: Goldeen TWM 44
+Vaporeon PRE 22: Vaporeon MEW 134
+Glaceon PRE 25: Glaceon TWM 54
+Wellspring Mask Ogerpon ex PRE 27: Wellspring Mask Ogerpon ex TWM 64
+Jolteon PRE 29: Jolteon MEW 135
+Iron Hands ex PRE 31: Iron Hands ex PAR 70
+Iron Thorns ex PRE 32: Iron Thorns ex TWM 77
+Espeon PRE 33: Espeon OBF 86
+Duskull PRE 35: Duskull SFA 18
+Dusclops PRE 36: Dusclops SFA 19
+Dusknoir PRE 37: Dusclops SFA 20
+Sylveon ex PRE 41: Sylveon ex SSP 86
+Scream Tail PRE 42: Scream Tail PAR 86
+Flutter Mane PRE 43: Flutter Mane TEF 78
+Munkidori PRE 44: Munkidori TWM 95
+Fezandipiti PRE 45: Fezandipiti TWM 96
+Iron Boulder PRE 46: Iron Boulder SCR 71
+Groudon PRE 49: Groudon PAR 93
+Bloodmoon Ursaluna PRE 54: Bloodmoon Ursaluna SFA 25
+Great Tusk PRE 55: Great Tusk TEF 97
+Sandy Shocks ex PRE 56: Sandy Shocks ex PAR 108
+Okidogi PRE 57: Okidogi TWM 111
+Cornerstone Mask Ogerpon ex PRE 58: Cornerstone Mask Ogerpon ex TWM 112
+Umbreon PRE 59: Umbreon OBF 130
+Roaring Moon PRE 65: Roaring Moon TEF 109
+Duraludon PRE 69: Duraludon SCR 106
+Archaludon PRE 70: Archaludon SCR 107
+Dreepy PRE 71: Dreepy TWM 128
+Drakloak PRE 72: Drakloak TWM 129
+Dragapult ex PRE 73: Dragapult ex TWM 130
+Eevee PRE 74: Eevee SSP 143
+Noctowl PRE 78: Noctowl SCR 115
+Dunsparce PRE 79: Dunsparce TEF 128
+Dudunsparce PRE 80: Dudunsparce TEF 129
+Fan Rotom PRE 85: Fan Rotom SCR 118
+Terapagos ex PRE 92: Terapagos ex SCR 128
+
+# SHF
+Rowlet SHF 6: Rowlet DAA 11
+Dartrix SHF 7: Dartrix DAA 12
+Decidueye SHF 8: Decidueye DAA 13
+Dhelmise V SHF 9: Shelmise V SSH 9
+Grookey SHF 11: Grookey SSH 10
+Rillaboom SHF 13: Rillaboom SSH 14
+Cinderace V SHF 18: Cinderace V RCL 35
+Cinderace VMAX SHF 19: Cinderace VMAX RCL 36
+Frosmoth SHF 30: Frosmoth SSH 64
+Shinx SHF 31: Shinx RCL 60
+Luxio SHF 32: Luxio RCL 61
+Luxray SHF 33: Luxray RCL 62
+Morpeko PR-SW 116: Morpeko PR-SW 31
+Morpeko SHF 35: Morpeko PR-SW 31
+Morpeko SHF 36: Morpeko PR-SW 31
+Morpeko V SHF 37: Morpeko V SSH 79
+Morpeko VMAX SHF 38: Morpeko VMAX SSH 80
+Indeedee V SHF 39: Indeedee V SSH 91
+Trapinch SHF 40: Trapinch DAA 89
+Galarian Weezing SHF 42: Galarian Weezing RCL 113
+Spinarak SHF 43: Spinarak DAA 102
+Crobat V SHF 44: Crobat V DAA 104
+Crobat V PR-SW 110: Crobat V DAA 104
+Crobat VMAX PR-SW 99: Crobat VMAX SHF 45
+Nickit SHF 47: Nickit SSH 125
+Cufant SHF 49: Cufant DAA 131
+Eevee SHF 52: Eevee PR-SW 42
+Cramorant V SHF 54: Cramorant V SSH 155
+
+#CPA
+Eldegoss V CPA 5: Eldegoss V RCL 19
+Sizzlipede CPA 9: Sizzlipede SSH 37
+Rolycoly CPA 31: Rolycoly RCL 105
+Purrloin CPA 39: Purrloin DAA 106
+Liepard CPA 40: Liepard DAA 107
+Trubbish CPA 43: Trubbish RCL 117
