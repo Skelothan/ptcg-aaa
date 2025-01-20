@@ -12,6 +12,8 @@ import itertools
 import math
 import multiprocessing as mp
 import multiprocessing.queues as mpq
+import pickle
+import shelve
 from typing import Iterable
 
 
@@ -683,7 +685,18 @@ class HDBSCANClusterEngine(ClusterEngine):
         super().__init__(card_counter, decks)
 
         self.spanning_tree_root: deck.Deck
-        self.spanning_tree_distances: list[tuple[float, deck.Deck, deck.Deck]] = []  
+        self.spanning_tree_distances: list[tuple[float, deck.Deck, deck.Deck]] = []
+        self.cluster_hierarchy: ClusterHierarchy | None = None
+        
+        self.similarities_calculated = False
+        self.spanning_tree_built = False
+        self.clusters_calculated = False
+
+        self.SAVE_PATH = f"saved_data/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_K-{CONFIG.get('K_THRESHOLD')}"
+
+        # shelf = shelve.open(f"{self.SAVE_PATH}.aaadeckshelf", flag="c")
+        # shelf.close()
+
 
     def _build_initial_similarity_matrix(self):
         """
@@ -733,6 +746,12 @@ class HDBSCANClusterEngine(ClusterEngine):
 
         end_time = datetime.now()
         print(f"\nSimilarity matrix built. (Time taken: {(end_time - start_time)})")
+
+        filename = self.SAVE_PATH + ".aaasim"
+        print(f"Saving similarities to {filename}...")
+        with open(filename, "wb") as file:
+            pickler = pickle.Pickler(file)
+            pickler.dump((self.decks_and_clusters, self.similarities))
 
     def _mut_reach_fill_queue(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], num_threads):
         """
@@ -839,6 +858,12 @@ class HDBSCANClusterEngine(ClusterEngine):
         end_time = datetime.now()
         print(f"\nSpanning tree built. (Time taken: {(end_time - start_time)})")
 
+        filename = self.SAVE_PATH + ".aaatree"
+        print(f"Saving spanning tree to {filename}...")
+        with open(filename, "wb") as file:
+            pickler = pickle.Pickler(file)
+            pickler.dump((self.spanning_tree_root, self.spanning_tree_distances))
+
     def _hdbscan_hierarchical_cluster(self):
         """
         Main HDBSCAN* cluster production logic.
@@ -852,26 +877,31 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Beginning clustering of decks with HDBSCAN* method...")
 
-        forest = ClusterHierarchy(self.decks_and_clusters.values(), self.spanning_tree_distances)
-        forest.build_hierarchy()
+        self.cluster_hierarchy = ClusterHierarchy(self.decks_and_clusters.values(), self.spanning_tree_distances)
+        self.cluster_hierarchy.build_hierarchy()
 
-        forest.condense_tree()
+        self.cluster_hierarchy.condense_tree()
 
-        forest.select_clusters_cohesion(self.card_counter)
+        self.cluster_hierarchy.select_clusters_cohesion(self.card_counter)
 
         end_time = datetime.now()
         print(f"Finished clustering. (Time taken: {(end_time - start_time)})")
 
-        return forest
+        self.clusters = {c.id: c for c in self.cluster_hierarchy.selected_clusters}
+        self.rogue_decks = self.cluster_hierarchy.rogue_decks
+
+        filename = self.SAVE_PATH + ".aaaarch"
+        print(f"Saving archetypes to {filename}...")
+        with open(filename, "wb") as file:
+            pickler = pickle.Pickler(file)
+            pickler.dump((self.clusters, self.rogue_decks))
 
     def cluster(self):
         # Initial similarity matrix build
         self._build_initial_similarity_matrix()
 
         self._calculate_mutual_reachabilities()
-
         self._build_spanning_tree()
 
-        forest = self._hdbscan_hierarchical_cluster()
-        self.clusters = {c.id: c for c in forest.selected_clusters}
-        self.rogue_decks = forest.rogue_decks
+        self._hdbscan_hierarchical_cluster()
+        
