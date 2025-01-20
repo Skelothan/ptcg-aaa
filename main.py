@@ -161,19 +161,10 @@ def suggest_k_threshold(decks: dict[str: deck.Deck], card_counter: deck.CardCoun
     print(f"K-threshold must be at least {suggestion} (probably oughta be more than that though)")
 
 
-def compute_archetypes(decks: dict[str: deck.Deck], card_counter: deck.CardCounter) -> cluster.ClusterEngine:
-    # TODO: make cluster engine configurable
-    cluster_engine = cluster.HDBSCANClusterEngine(card_counter, decks)
-
-    cluster_engine.cluster()
-
-    return cluster_engine    
-
-
 def main():
-    decks = None
-    card_counter = None
-    cluster_engine = None
+    decks: dict[str, deck.Deck] = None
+    card_counter: deck.CardCounter = None
+    cluster_engine: cluster.HDBSCANClusterEngine = None
 
     print("==== Pokémon TCG Automatic Archetype Analyzer ====")
     while True:
@@ -192,18 +183,8 @@ def main():
                 == Process data == 
                 P2. Load decks
                   
-                0. Exit
+                X. Exit
                 """)
-
-            option = input("> ")
-            
-            if option == "d1":
-                download_tournament_results()
-            elif option == "p2":
-                decks, card_counter = load_decks()
-            else:
-                print("Goodbye!")
-                exit(0)
         elif cluster_engine is None:
             print("""Please choose an option:
                 == Download data == 
@@ -213,37 +194,32 @@ def main():
                 P1. Suggest K-threshold
                 P2. Load decks
                 P3. Compute deck archetypes
+                  P3a. Calculate similarities
+                  P3b. Build spanning tree
+                  P3c. Determine archetypes
                   
                 == Reports ==
                 R1. Print card usage report
                 
-                0. Exit
+                X. Exit
                 """)
-
-            option = input("> ")
-            
-            if option == "d1":
-                download_tournament_results()
-            elif option == "p1":
-                suggest_k_threshold(decks, card_counter)
-            elif option == "p2":
-                decks, card_counter = load_decks()
-            elif option == "p3":
-                cluster_engine = compute_archetypes(decks, card_counter)
-            elif option == "r1":
-                print_card_usage_report(card_counter)
-            else:
-                print("Goodbye!")
-                exit(0)
         else:
             print("""Please choose an option:
                 == Download data == 
                 D1. Download tournament results
                   
+                == Load data ==
+                L1. 
+                L2.
+                L3.
+                  
                 == Process data == 
                 P1. Suggest K-threshold
                 P2. Load decks
                 P3. Compute deck archetypes
+                  P3a. Calculate similarities
+                  P3b. Build spanning tree
+                  P3c. Determine archetypes
                 P4. Rename archetypes
                   
                 == Reports ==
@@ -257,32 +233,35 @@ def main():
                 X. Exit
                 """)
 
-            option = input("> ").lower()
-            
-            if option == "d1":
+        option = input("> ").lower()
+        match option:
+            case "d1":
                 download_tournament_results()
-            elif option == "p1":
-                suggest_k_threshold()
-            elif option == "p2":
+            case "p1":
+                suggest_k_threshold(decks, card_counter)
+            case "p2":
                 decks, card_counter = load_decks()
-            elif option == "p3":
-                cluster_engine = compute_archetypes(decks, card_counter)
-            elif option == "p4":
+                cluster_engine = cluster.HDBSCANClusterEngine(card_counter, decks)
+            case "p3":
+                cluster_engine.cluster()
+            case "p3a":
+                cluster_engine._build_initial_similarity_matrix()
+            case "p3b":
+                cluster_engine._calculate_mutual_reachabilities()
+                cluster_engine._build_spanning_tree()
+            case "p3c":
+                cluster_engine._hdbscan_hierarchical_cluster()
+            case "p4":
                 cluster_engine.rename_archetypes()
-            elif option == "r0":
+            case "r1":
                 print_card_usage_report(card_counter)
+            case "r2":
                 cluster_engine.print_cluster_report()
+            case "r3":
                 cluster_engine.print_rogue_deck_report()
+            case "r4":
                 cluster_engine.print_metagame_report()
-            elif option == "r1":
-                print_card_usage_report(card_counter)
-            elif option == "r2":
-                cluster_engine.print_cluster_report()
-            elif option == "r3":
-                cluster_engine.print_rogue_deck_report()
-            elif option == "r4":
-                cluster_engine.print_metagame_report()
-            else:
+            case _:
                 print("Goodbye!")
                 exit(0)
     
