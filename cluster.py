@@ -132,7 +132,7 @@ class ClusterHierarchy():
                     break
                 
             if s1 == s2: # Don't do anything if the two are already part of the same parent
-                break
+                continue
             else:
                 merged_set = ClusterHierarchyNode((s1, s2), distance)
                 self.data.remove(s1)
@@ -693,10 +693,8 @@ class HDBSCANClusterEngine(ClusterEngine):
         self.clusters_calculated = False
 
         self.SAVE_PATH = f"saved_data/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_K-{CONFIG.get('K_THRESHOLD')}"
-
-        # shelf = shelve.open(f"{self.SAVE_PATH}.aaadeckshelf", flag="c")
-        # shelf.close()
-
+        self.similarity_shelf_path: str = f"{self.SAVE_PATH}.aaasimshelf"
+        self.mut_reach_shelf_path: str = f"{self.SAVE_PATH}.aaamrshelf"
 
     def _build_initial_similarity_matrix(self):
         """
@@ -706,6 +704,9 @@ class HDBSCANClusterEngine(ClusterEngine):
         """
         start_time = datetime.now()
         print("Building initial similarity matrix...")
+
+        with shelve.open(self.similarity_shelf_path, flag="c") as shelf:
+            shelf.clear()
 
         similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
         
@@ -730,19 +731,22 @@ class HDBSCANClusterEngine(ClusterEngine):
         num_finished_processes = 0
         num_outputs_received = 0
         while True:
-            output = outputs.get()
-            if output is None:
-                num_finished_processes += 1
-                if num_finished_processes >= CONFIG.get("NUM_THREADS"):
-                    break
-            else:
-                num_outputs_received += 1
-                self.similarities[output[0]] = output[1]
-                d1: deck.Deck = self.decks_and_clusters[output[0][0]]
-                d2: deck.Deck = self.decks_and_clusters[output[0][1]]
-                d1.k_similarity_push((output[1], d2))
-                d2.k_similarity_push((output[1], d1))
-                print(f"  Calculated similarity for {output[0][0].ljust(32)} and {output[0][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
+            with shelve.open(self.similarity_shelf_path, flag="w") as similarity_shelf:
+                output = outputs.get()
+                if output is None:
+                    num_finished_processes += 1
+                    if num_finished_processes >= CONFIG.get("NUM_THREADS"):
+                        break
+                else:
+                    num_outputs_received += 1
+                    similarity_shelf[f"{output[0][0]},{output[0][1]}"] = output[1]
+                    # self.similarities[output[0]] = output[1]
+
+                    d1: deck.Deck = self.decks_and_clusters[output[0][0]]
+                    d2: deck.Deck = self.decks_and_clusters[output[0][1]]
+                    d1.k_similarity_push((output[1], d2.id))
+                    d2.k_similarity_push((output[1], d1.id))
+                    print(f"  Calculated similarity for {output[0][0].ljust(32)} and {output[0][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
 
         end_time = datetime.now()
         print(f"\nSimilarity matrix built. (Time taken: {(end_time - start_time)})")
@@ -753,19 +757,21 @@ class HDBSCANClusterEngine(ClusterEngine):
             pickler = pickle.Pickler(file)
             pickler.dump((self.decks_and_clusters, self.similarities))
 
-    def _mut_reach_fill_queue(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], num_threads):
+    def _mut_reach_fill_queue(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], num_threads):
         """
         Producer process for mutual reachability calculation. Fills the tasks queue with pairs of decks.
         """
-        similarities_to_calc = self.similarities.items()
-        num_tasks_queued = 0
-        for pair in similarities_to_calc:
-            tasks.put(pair)
-            num_tasks_queued += 1
-        stop_signals_queued = 0
-        for signal in [None] * num_threads:
-            tasks.put(signal)
-            stop_signals_queued += 1
+        with shelve.open(self.similarity_shelf_path, flag="r") as similarity_shelf:
+            similarities_to_calc = similarity_shelf.items()
+            num_tasks_queued = 0
+            for pair in similarities_to_calc:
+                pair = (tuple(pair[0].split(",")), pair[1])
+                tasks.put(pair)
+                num_tasks_queued += 1
+            stop_signals_queued = 0
+            for signal in [None] * num_threads:
+                tasks.put(signal)
+                stop_signals_queued += 1
 
     def _compute_mut_reach(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], output: mpq.Queue[tuple[tuple[str, str], float]]):
         """
@@ -796,6 +802,11 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Calculating mutual reachabilities...")
 
+        with shelve.open(self.mut_reach_shelf_path, flag="n") as mut_reach_shelf:
+            pass # Create an empty shelf
+
+        similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
+
         manager = mp.Manager()
         tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
         outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
@@ -816,19 +827,26 @@ class HDBSCANClusterEngine(ClusterEngine):
         num_finished_processes = 0
         num_outputs_received = 0
         while True:
-            output = outputs.get()
-            if output is None:
-                num_finished_processes += 1
-                if num_finished_processes >= CONFIG.get("NUM_THREADS"):
-                    break
-            else:
-                num_outputs_received += 1
-                d1 = self.original_decks[output[0][0]]
-                d2 = self.original_decks[output[0][1]]
-                mut_reach = output[1]
-                heapq.heappush(d1.mut_reach_similarities, (mut_reach, d1, d2))
-                heapq.heappush(d2.mut_reach_similarities, (mut_reach, d2, d1))
-                print(f"  Calculated mutual reachability for {d1.id} and {d2.id} (Progress: {num_outputs_received}/{len(self.similarities)})", end="\r")
+            with shelve.open(self.mut_reach_shelf_path, flag="w") as mut_reach_shelf:
+                output = outputs.get()
+                if output is None:
+                    num_finished_processes += 1
+                    if num_finished_processes >= CONFIG.get("NUM_THREADS"):
+                        break
+                else:
+                    num_outputs_received += 1
+
+                    d1_id, d2_id = output[0]
+                    mut_reach = output[1]
+
+                    d1_mut_reach: list[float, str, str] = mut_reach_shelf.get(d1_id, [])
+                    d2_mut_reach: list[float, str, str] = mut_reach_shelf.get(d2_id, [])
+                    heapq.heappush(d1_mut_reach, (mut_reach, d1_id, d2_id))
+                    heapq.heappush(d2_mut_reach, (mut_reach, d2_id, d1_id))
+                    mut_reach_shelf[d1_id] = d1_mut_reach
+                    mut_reach_shelf[d2_id] = d2_mut_reach
+
+                    print(f"  Calculated mutual reachability for {d1_id} and {d2_id} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
             
         end_time = datetime.now()
         print(f"\nMutual reachabilities calculated. (Time taken: {(end_time - start_time)})")
@@ -840,20 +858,23 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Building spanning tree...")
 
-        spanning_tree_decks: set[deck.Deck] = set()
+        spanning_tree_decks: set[str] = set()
 
         self.spanning_tree_root: deck.Deck = self.decks_and_clusters[next(iter(self.original_decks))]
-        spanning_tree_decks.add(self.spanning_tree_root)
-        tree_similarities = self.spanning_tree_root.mut_reach_similarities
+        spanning_tree_decks.add(self.spanning_tree_root.id)
+        with shelve.open(self.mut_reach_shelf_path, flag="r") as mut_reach_shelf:
+            tree_similarities: list[tuple[float, str, str]] = mut_reach_shelf[self.spanning_tree_root.id]
 
-        while len(spanning_tree_decks) < len(self.original_decks):
-            mut_reach_dist, this_deck, other_deck = heapq.heappop(tree_similarities)
-            if other_deck not in spanning_tree_decks:
-                spanning_tree_decks.add(other_deck)
-                heapq.heappush(self.spanning_tree_distances, (mut_reach_dist, this_deck, other_deck))
-                for new_similarity in other_deck.mut_reach_similarities:
-                    heapq.heappush(tree_similarities, new_similarity)
-                print(f"  Connected {other_deck.id} to the spanning tree (Progress: {len(spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
+            while len(spanning_tree_decks) < len(self.original_decks):
+                mut_reach_dist, this_deck_id, other_deck_id = heapq.heappop(tree_similarities)
+                if other_deck_id not in spanning_tree_decks:
+                    spanning_tree_decks.add(other_deck_id)
+                    heapq.heappush(self.spanning_tree_distances, (mut_reach_dist, self.decks_and_clusters[this_deck_id], self.decks_and_clusters[other_deck_id]))
+
+                    other_deck_mut_reach: list[tuple[float, str, str]] = mut_reach_shelf[other_deck_id]
+                    for new_mut_reach in other_deck_mut_reach:
+                        heapq.heappush(tree_similarities, new_mut_reach)
+                    print(f"  Connected {other_deck_id} to the spanning tree (Progress: {len(spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
 
         end_time = datetime.now()
         print(f"\nSpanning tree built. (Time taken: {(end_time - start_time)})")

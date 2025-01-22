@@ -172,11 +172,11 @@ class Deck(DeckLike):
         self.tournament_name = tournament_name
         self.date = date
         self.format = format
-        self.mut_reach_similarities: list[tuple[float, Deck, Deck]] = []
+        self.mut_reach_similarities: list[tuple[float, str, str]] = []
 
         # Used during HDBSCAN* clustering
         self.death_distance: float
-        self.k_most_similarities: list[tuple[float, Deck]] = []
+        self.k_most_similarities: list[tuple[float, str]] = []
         self._k_distance: float | None = None
 
     def load_decklist_ptcgl(self, decklist: str):
@@ -251,7 +251,7 @@ class Deck(DeckLike):
 
         self._decklist = Counter(decklist_dict)
     
-    def k_similarity_push(self, similarity):
+    def k_similarity_push(self, similarity: tuple[float, str]):
         self.k_most_similarities.append(similarity)
         self.k_most_similarities = sorted(self.k_most_similarities, reverse=True)[:CONFIG["K_THRESHOLD"]]
 
