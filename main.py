@@ -253,6 +253,11 @@ def main():
                 cluster_engine._hdbscan_hierarchical_cluster()
             case "p4":
                 cluster_engine.rename_archetypes()
+            case "r0":
+                print_card_usage_report(card_counter)
+                cluster_engine.print_cluster_report()
+                cluster_engine.print_rogue_deck_report()
+                cluster_engine.print_metagame_report()
             case "r1":
                 print_card_usage_report(card_counter)
             case "r2":
