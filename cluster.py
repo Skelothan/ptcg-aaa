@@ -12,6 +12,7 @@ import itertools
 import math
 import multiprocessing as mp
 import multiprocessing.queues as mpq
+import os
 import pickle
 import shelve
 from typing import Iterable
@@ -351,11 +352,11 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         similarities_to_calc = itertools.combinations(self.decks_and_clusters.values(), 2)
         num_tasks_queued = 0
         for pair in similarities_to_calc:
-            tasks.put(pair)
+            tasks.put(pair, block=True)
             num_tasks_queued += 1
         stop_signals_queued = 0
         for signal in [None] * num_threads:
-            tasks.put(signal)
+            tasks.put(signal, block=True)
             stop_signals_queued += 1
 
     def _compute_similarities(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], output: mpq.Queue[tuple[tuple[str, str], float]]):
@@ -365,11 +366,11 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         while True:
             pair = tasks.get(block=True)
             if pair is None:
-                output.put(None)
+                output.put(None, block=True)
                 break
             d1, d2 = pair
             similarity = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
-            output.put(((min(d1.id, d2.id), max(d1.id, d2.id)), similarity))
+            output.put(((min(d1.id, d2.id), max(d1.id, d2.id)), similarity), block=True)
 
     def _build_initial_similarity_matrix(self):
         """
@@ -383,8 +384,8 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
         
         manager = mp.Manager()
-        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
-        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=100000)
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=100000)
 
         processes = []
 
@@ -403,7 +404,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         num_finished_processes = 0
         num_outputs_received = 0
         while True:
-            output = outputs.get()
+            output = outputs.get(block=True)
             if output is None:
                 num_finished_processes += 1
                 if num_finished_processes >= CONFIG.get("NUM_THREADS"):
@@ -577,8 +578,8 @@ class UPGMAClusterEngine(ClusterEngine):
         print("Beginning clustering of decks with UPGMA method...")
 
         manager = mp.Manager()
-        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
-        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=100000)
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=100000)
 
         merge_count = 0
 
@@ -613,13 +614,13 @@ class UPGMAClusterEngine(ClusterEngine):
                     process.start()
 
                 for pair in similarities_to_calc:
-                    tasks.put(pair)
+                    tasks.put(pair, block=True)
                 for signal in [None] * CONFIG.get("NUM_THREADS"):
-                    tasks.put(signal)
+                    tasks.put(signal, block=True)
 
                 num_finished_processes = 0
                 while True:
-                    output = outputs.get()
+                    output = outputs.get(block=True)
                     if output is None:
                         num_finished_processes += 1
                         if num_finished_processes >= CONFIG.get("NUM_THREADS"):
@@ -705,14 +706,14 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Building initial similarity matrix...")
 
-        with shelve.open(self.similarity_shelf_path, flag="c") as shelf:
-            shelf.clear()
+        if os.path.isfile(self.similarity_shelf_path):
+            os.remove(self.similarity_shelf_path)
 
         similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
         
         manager = mp.Manager()
-        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
-        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=100000)
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=100000)
 
         processes = []
 
@@ -731,8 +732,8 @@ class HDBSCANClusterEngine(ClusterEngine):
         num_finished_processes = 0
         num_outputs_received = 0
         while True:
-            with shelve.open(self.similarity_shelf_path, flag="w") as similarity_shelf:
-                output = outputs.get()
+            with shelve.open(self.similarity_shelf_path, flag="c") as similarity_shelf:
+                output = outputs.get(block=True)
                 if output is None:
                     num_finished_processes += 1
                     if num_finished_processes >= CONFIG.get("NUM_THREADS"):
@@ -766,11 +767,11 @@ class HDBSCANClusterEngine(ClusterEngine):
             num_tasks_queued = 0
             for pair in similarities_to_calc:
                 pair = (tuple(pair[0].split(",")), pair[1])
-                tasks.put(pair)
+                tasks.put(pair, block=True)
                 num_tasks_queued += 1
             stop_signals_queued = 0
             for signal in [None] * num_threads:
-                tasks.put(signal)
+                tasks.put(signal, block=True)
                 stop_signals_queued += 1
 
     def _compute_mut_reach(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], output: mpq.Queue[tuple[tuple[str, str], float]]):
@@ -780,13 +781,13 @@ class HDBSCANClusterEngine(ClusterEngine):
         while True:
             t = tasks.get(block=True)
             if t is None:
-                output.put(None)
+                output.put(None, block=True)
                 break
             pair, similarity = t
             d1 = self.original_decks[pair[0]]
             d2 = self.original_decks[pair[1]]
             mut_reach = max(d1.k_distance, d2.k_distance, 0.5 - similarity)
-            output.put((pair, mut_reach))
+            output.put((pair, mut_reach), block=True)
 
     def _calculate_mutual_reachabilities(self):
         """
@@ -802,14 +803,14 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Calculating mutual reachabilities...")
 
-        with shelve.open(self.mut_reach_shelf_path, flag="n") as mut_reach_shelf:
-            pass # Create an empty shelf
+        if os.path.isfile(self.mut_reach_shelf_path):
+            os.remove(self.mut_reach_shelf_path)
 
         similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
 
         manager = mp.Manager()
-        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue()
-        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue()
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=100000)
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=100000)
 
         processes = []
 
@@ -827,8 +828,8 @@ class HDBSCANClusterEngine(ClusterEngine):
         num_finished_processes = 0
         num_outputs_received = 0
         while True:
-            with shelve.open(self.mut_reach_shelf_path, flag="w") as mut_reach_shelf:
-                output = outputs.get()
+            with shelve.open(self.mut_reach_shelf_path, flag="c") as mut_reach_shelf:
+                output = outputs.get(block=True)
                 if output is None:
                     num_finished_processes += 1
                     if num_finished_processes >= CONFIG.get("NUM_THREADS"):
