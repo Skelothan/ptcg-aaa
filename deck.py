@@ -253,7 +253,8 @@ class Deck(DeckLike):
     
     def k_similarity_push(self, similarity: tuple[float, str]):
         self.k_most_similarities.append(similarity)
-        self.k_most_similarities = sorted(self.k_most_similarities, reverse=True)[:CONFIG["K_THRESHOLD"]]
+        self.k_most_similarities.sort(reverse=True)
+        del self.k_most_similarities[CONFIG["K_THRESHOLD"]:]
 
     @property
     def k_distance(self) -> float:
