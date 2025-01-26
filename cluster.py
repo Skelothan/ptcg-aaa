@@ -578,8 +578,8 @@ class UPGMAClusterEngine(ClusterEngine):
         print("Beginning clustering of decks with UPGMA method...")
 
         manager = mp.Manager()
-        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=100000)
-        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=100000)
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=10000)
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=10000)
 
         merge_count = 0
 
@@ -712,8 +712,8 @@ class HDBSCANClusterEngine(ClusterEngine):
         similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
         
         manager = mp.Manager()
-        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=100000)
-        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=100000)
+        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=10000)
+        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=10000)
 
         processes = []
 
