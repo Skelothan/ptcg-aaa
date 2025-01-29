@@ -185,24 +185,6 @@ def main():
                   
                 X. Exit
                 """)
-        elif cluster_engine is None:
-            print("""Please choose an option:
-                == Download data == 
-                D1. Download tournament results
-                  
-                == Process data == 
-                P1. Suggest K-threshold
-                P2. Load decks
-                P3. Compute deck archetypes
-                  P3a. Calculate similarities
-                  P3b. Build spanning tree
-                  P3c. Determine archetypes
-                  
-                == Reports ==
-                R1. Print card usage report
-                
-                X. Exit
-                """)
         else:
             print("""Please choose an option:
                 == Download data == 

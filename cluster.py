@@ -279,9 +279,9 @@ class ClusterHierarchy():
         all_sets = {x for y in self.condensed_tree.values() for x in y}
         all_sets.add(self.root_node)
         
+        # TODO: make the weighting function configurable
         # for c in all_sets:
         #     c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
-        #     # TODO: make the weighting function configurable
         #     c.cohesion = sum([card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(c.deck_cluster, d) for d in c.deck_cluster.decks]) / len(c.deck_cluster.decks)
 
         selected_clusters = all_sets - self.condensed_tree.keys()
@@ -420,7 +420,6 @@ class ClusterEngine(metaclass=abc.ABCMeta):
     def rename_archetypes(self):
         for archetype in sorted(self.clusters.values(), key=lambda a: a.num_decks, reverse=True):
             longest_card_name_length = max(len(max(archetype.decklist.keys(), key=len)), len("Card Name"))
-            # longest_table_line_length = longest_card_name_length + len(" | Weight | Avg. count")
 
             print(f"{'Card Name'.ljust(longest_card_name_length)} | {'Weight'} | {'Avg. count'}")
             print(f"{'-' * longest_card_name_length} | {'------'} | {'----------'}")
@@ -741,7 +740,6 @@ class HDBSCANClusterEngine(ClusterEngine):
                 else:
                     num_outputs_received += 1
                     similarity_shelf[f"{output[0][0]},{output[0][1]}"] = output[1]
-                    # self.similarities[output[0]] = output[1]
 
                     d1: deck.Deck = self.decks_and_clusters[output[0][0]]
                     d2: deck.Deck = self.decks_and_clusters[output[0][1]]
