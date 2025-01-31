@@ -161,6 +161,10 @@ def suggest_k_threshold(decks: dict[str: deck.Deck], card_counter: deck.CardCoun
     print(f"K-threshold must be at least {suggestion} (probably oughta be more than that though)")
 
 
+def quit():
+    print("Goodbye!")
+    exit(0)
+
 def main():
     decks: dict[str, deck.Deck] = None
     card_counter: deck.CardCounter = None
@@ -215,7 +219,15 @@ def main():
                 X. Exit
                 """)
 
-        option = input("> ").lower()
+        try:
+            option = input("> ").lower()
+        except EOFError:
+            print("")
+            quit()
+        except KeyboardInterrupt:
+            print("")
+            quit()
+
         match option:
             case "d1":
                 download_tournament_results()
@@ -249,8 +261,7 @@ def main():
             case "r4":
                 cluster_engine.print_metagame_report()
             case _:
-                print("Goodbye!")
-                exit(0)
+                quit()
     
 
 if __name__ == "__main__":
