@@ -15,8 +15,7 @@ logger = logging.getLogger(__name__)
 PROGRAM_VERSION = (0, 1, 0)
 
 FORMAT_DATES = {
-    # all formats BST-PAF
-    "standard_e-g": (datetime(2023, 3, 30, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc)), 
+    # "standard_e-g": (datetime(2023, 3, 30, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc)), 
     # "BST-SVI":
     # "BST-PAL":
     # "BST-OBF":
@@ -24,17 +23,16 @@ FORMAT_DATES = {
     # "BST-PAR":
     # "BST-PAF":
 
-    # all formats BRS-PRE
-    "standard_f-h": (datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc)),
+    # "standard_f-h": (datetime(2024, 3, 21, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc)),
     "BRS-TEF": (datetime(2024,  3, 21, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024,  5, 23, 17, 0, 0, 0, tzinfo=timezone.utc)),
     "BRS-TWM": (datetime(2024,  5, 23, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024,  8,  1, 17, 0, 0, 0, tzinfo=timezone.utc)),
     "BRS-SFA": (datetime(2024,  8,  1, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024,  9, 12, 17, 0, 0, 0, tzinfo=timezone.utc)),
     "BRS-SCR": (datetime(2024,  9, 12, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2024, 11,  7, 17, 0, 0, 0, tzinfo=timezone.utc)),
     "BRS-SSP": (datetime(2024, 11,  7, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2025,  1, 16, 17, 0, 0, 0, tzinfo=timezone.utc)),
-    "BRS-PRE": (datetime(2025,  1, 16, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc)),
+    "BRS-PRE": (datetime(2025,  1, 16, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2025,  3, 27, 17, 0, 0, 0, tzinfo=timezone.utc)),
 
     # "standard_g-i":
-    # "SVI-JTG": 
+    # "SVI-JTG": (datetime(2025,  3, 27, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc))
 }
 
 
@@ -73,7 +71,7 @@ def download_tournament_results():
             time.sleep(0.1)
 
         # If we haven't downloaded the tournament deck lists, download them
-        standings_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}/{tournament.get('id')}_standings.json"
+        standings_path = f"data/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}/{tournament.get('id')}_standings.json"
         if not os.path.isfile(standings_path):
             with open(details_path, "r") as details_file:
                 details = json.load(details_file)
@@ -100,7 +98,7 @@ def load_decks_from_files() -> dict[str, deck.Deck]:
     start_time = datetime.now()
     tournament_count = 0
     print("Loading decks from standings files...")
-    dir_path = f"data/{CONFIG.get("TOURNAMENT_FORMAT_FILTER")}"
+    dir_path = f"data/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}"
     for file_path in os.listdir(dir_path):
         filename = os.fsdecode(file_path)
         if filename.endswith("standings.json"):
@@ -163,19 +161,14 @@ def suggest_k_threshold(decks: dict[str: deck.Deck], card_counter: deck.CardCoun
     print(f"K-threshold must be at least {suggestion} (probably oughta be more than that though)")
 
 
-def compute_archetypes(decks: dict[str: deck.Deck], card_counter: deck.CardCounter) -> cluster.ClusterEngine:
-    # TODO: make cluster engine configurable
-    cluster_engine = cluster.HDBSCANClusterEngine(card_counter, decks)
-
-    cluster_engine.cluster()
-
-    return cluster_engine    
-
+def quit():
+    print("Goodbye!")
+    exit(0)
 
 def main():
-    decks = None
-    card_counter = None
-    cluster_engine = None
+    decks: dict[str, deck.Deck] = None
+    card_counter: deck.CardCounter = None
+    cluster_engine: cluster.HDBSCANClusterEngine = None
 
     print("==== Pokémon TCG Automatic Archetype Analyzer ====")
     while True:
@@ -194,58 +187,25 @@ def main():
                 == Process data == 
                 P2. Load decks
                   
-                0. Exit
+                X. Exit
                 """)
-
-            option = input("> ")
-            
-            if option == "d1":
-                download_tournament_results()
-            elif option == "p2":
-                decks, card_counter = load_decks()
-            else:
-                print("Goodbye!")
-                exit(0)
-        elif cluster_engine is None:
-            print("""Please choose an option:
-                == Download data == 
-                D1. Download tournament results
-                  
-                == Process data == 
-                P1. Suggest K-threshold
-                P2. Load decks
-                P3. Compute deck archetypes
-                  
-                == Reports ==
-                R1. Print card usage report
-                
-                0. Exit
-                """)
-
-            option = input("> ")
-            
-            if option == "d1":
-                download_tournament_results()
-            elif option == "p1":
-                suggest_k_threshold(decks, card_counter)
-            elif option == "p2":
-                decks, card_counter = load_decks()
-            elif option == "p3":
-                cluster_engine = compute_archetypes(decks, card_counter)
-            elif option == "r1":
-                print_card_usage_report(card_counter)
-            else:
-                print("Goodbye!")
-                exit(0)
         else:
             print("""Please choose an option:
                 == Download data == 
                 D1. Download tournament results
                   
+                == Load data ==
+                L1. 
+                L2.
+                L3.
+                  
                 == Process data == 
                 P1. Suggest K-threshold
                 P2. Load decks
                 P3. Compute deck archetypes
+                  P3a. Calculate similarities
+                  P3b. Build spanning tree
+                  P3c. Determine archetypes
                 P4. Rename archetypes
                   
                 == Reports ==
@@ -259,34 +219,49 @@ def main():
                 X. Exit
                 """)
 
+        try:
             option = input("> ").lower()
-            
-            if option == "d1":
+        except EOFError:
+            print("")
+            quit()
+        except KeyboardInterrupt:
+            print("")
+            quit()
+
+        match option:
+            case "d1":
                 download_tournament_results()
-            elif option == "p1":
-                suggest_k_threshold()
-            elif option == "p2":
+            case "p1":
+                suggest_k_threshold(decks, card_counter)
+            case "p2":
                 decks, card_counter = load_decks()
-            elif option == "p3":
-                cluster_engine = compute_archetypes(decks, card_counter)
-            elif option == "p4":
+                cluster_engine = cluster.HDBSCANClusterEngine(card_counter, decks)
+            case "p3":
+                cluster_engine.cluster()
+            case "p3a":
+                cluster_engine._build_initial_similarity_matrix()
+            case "p3b":
+                cluster_engine._calculate_mutual_reachabilities()
+                cluster_engine._build_spanning_tree()
+            case "p3c":
+                cluster_engine._hdbscan_hierarchical_cluster()
+            case "p4":
                 cluster_engine.rename_archetypes()
-            elif option == "r0":
+            case "r0":
                 print_card_usage_report(card_counter)
                 cluster_engine.print_cluster_report()
                 cluster_engine.print_rogue_deck_report()
                 cluster_engine.print_metagame_report()
-            elif option == "r1":
+            case "r1":
                 print_card_usage_report(card_counter)
-            elif option == "r2":
+            case "r2":
                 cluster_engine.print_cluster_report()
-            elif option == "r3":
+            case "r3":
                 cluster_engine.print_rogue_deck_report()
-            elif option == "r4":
+            case "r4":
                 cluster_engine.print_metagame_report()
-            else:
-                print("Goodbye!")
-                exit(0)
+            case _:
+                quit()
     
 
 if __name__ == "__main__":

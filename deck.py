@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import abc
 import hashlib
-import heapq
 import re
 from collections import Counter
 from datetime import date
@@ -69,6 +68,8 @@ ACE_SPECS = {
     "Precious Trolley",
     "Scramble Switch",
     "Enriching Energy",
+    "Max Rod",
+    "Treasure Tracker",
 }
 
 
@@ -172,11 +173,10 @@ class Deck(DeckLike):
         self.tournament_name = tournament_name
         self.date = date
         self.format = format
-        self.mut_reach_similarities: list[tuple[float, Deck, Deck]] = []
 
         # Used during HDBSCAN* clustering
         self.death_distance: float
-        self.k_most_similarities: list[tuple[float, Deck]] = []
+        self.k_most_similarities: list[tuple[float, str]] = []
         self._k_distance: float | None = None
 
     def load_decklist_ptcgl(self, decklist: str):
@@ -251,9 +251,25 @@ class Deck(DeckLike):
 
         self._decklist = Counter(decklist_dict)
     
-    def k_similarity_push(self, similarity):
+    def k_similarity_push(self, similarity: tuple[float, str]):
+        """
+        Add a similarity to this deck's internal list of similarities for K-distance calculation.
+
+        Will only store up to CONFIG["K_THRESHOLD"] values — others are not needed. Extra values will be deleted to reduce memory usage.
+        
+        Parameters
+        ----------
+        similarity : tuple[float, str]
+            The similarity (float) of this Deck to the Deck with id (str).
+        """
         self.k_most_similarities.append(similarity)
-        self.k_most_similarities = sorted(self.k_most_similarities, reverse=True)[:CONFIG["K_THRESHOLD"]]
+        self.k_most_similarities.sort(reverse=True)
+        del self.k_most_similarities[CONFIG["K_THRESHOLD"]:]
+
+    def _get_k_distance(self) -> float:
+        self._k_distance = 0.5 - self.k_most_similarities[-1][0]
+        del self.k_most_similarities
+        return self._k_distance
 
     @property
     def k_distance(self) -> float:
