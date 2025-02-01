@@ -101,7 +101,7 @@ class ClusterHierarchy():
         '''
 
         self.data: set[deck.Deck | ClusterHierarchyNode] = set(data)
-        self.linkages = linkages
+        self.linkages = copy.copy(linkages)
 
         self.root_node: ClusterHierarchyNode
         self.condensed_tree: dict[ClusterHierarchyNode, tuple[ClusterHierarchyNode, ClusterHierarchyNode]] = {}
@@ -323,6 +323,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         self.card_counter = card_counter
         self.original_decks = decks
         self.decks_and_clusters: dict[str, deck.DeckLike] = copy.copy(decks)
+        self.decks_and_clusters_by_contents: dict[int, deck.DeckLike]
         self.clusters: dict[str, deck.DeckCluster]
         self.rogue_decks: set[deck.Deck] = set()
         self.similarities: dict[tuple[str, str], float] = {}
@@ -337,12 +338,14 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         original_size = len(self.decks_and_clusters)
         deck_contents_cache: dict[int, deck.DeckLike] = {}
         for d in self.decks_and_clusters.values():
-            if d.contents_hash() not in deck_contents_cache:
-                deck_contents_cache[d.contents_hash()] = d
+            if d.contents_hash not in deck_contents_cache:
+                deck_contents_cache[d.contents_hash] = d
             else: # Combine the two
-                deck_contents_cache[d.contents_hash()] = deck_contents_cache[d.contents_hash()] + d
+                deck_contents_cache[d.contents_hash] = deck_contents_cache[d.contents_hash] + d
 
         self.decks_and_clusters = {d.id: d for d in deck_contents_cache.values()}
+        self.decks_and_clusters_by_contents = deck_contents_cache
+
         print(f"Identical decks clustered. (Reduced from {original_size} to {len(self.decks_and_clusters)} decks)")
 
     def _fill_queue(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], num_threads):
@@ -688,6 +691,8 @@ class HDBSCANClusterEngine(ClusterEngine):
         self.spanning_tree_distances: list[tuple[float, deck.Deck, deck.Deck]] = []
         self.cluster_hierarchy: ClusterHierarchy | None = None
         
+        self.k_similarities: dict[str, list[tuple[float, str]]] = {}
+
         self.similarities_calculated = False
         self.spanning_tree_built = False
         self.clusters_calculated = False
@@ -695,6 +700,39 @@ class HDBSCANClusterEngine(ClusterEngine):
         self.SAVE_PATH = f"saved_data/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_K-{CONFIG.get('K_THRESHOLD')}"
         self.similarity_shelf_path: str = f"{self.SAVE_PATH}.aaasimshelf"
         self.mut_reach_shelf_path: str = f"{self.SAVE_PATH}.aaamrshelf"
+
+    def _compute_similarities(self, tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None], output: mpq.Queue[tuple[tuple[str, str], float]]):
+        """
+        Worker process for initial similarity matrix build. Calculates the similarity of the provided decks/clusters and put it in the output queue.
+        """
+        while True:
+            pair = tasks.get(block=True)
+            if pair is None:
+                output.put(None, block=True)
+                break
+            d1, d2 = pair
+
+            similarity = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
+
+            output.put(((min(d1.contents_hash, d2.contents_hash), max(d1.contents_hash, d2.contents_hash)), similarity), block=True)
+
+    def k_similarity_push(self, content_hash, similarity: tuple[float, str]):
+        """
+        Writes a similarity of the deck/cluster with provided content hash to a shelf of similarities specifically for K-distance calculation.
+
+        Will only store up to CONFIG["K_THRESHOLD"] values — others are not needed. Extra values will be deleted to reduce storage usage.
+        
+        Parameters
+        ----------
+        similarity : tuple[float, str]
+            The similarity (float) of this Deck to the Deck with content hash (str).
+        """
+        if content_hash not in self.k_similarities.keys():
+            self.k_similarities[content_hash] = []
+
+        self.k_similarities[content_hash].append(similarity)
+        self.k_similarities[content_hash].sort(reverse=True)
+        del self.k_similarities[content_hash][CONFIG["K_THRESHOLD"]:]
 
     def _build_initial_similarity_matrix(self):
         """
@@ -707,9 +745,11 @@ class HDBSCANClusterEngine(ClusterEngine):
 
         if os.path.isfile(self.similarity_shelf_path):
             os.remove(self.similarity_shelf_path)
+        # if os.path.isfile(self.k_similarity_shelf_path):
+        #     os.remove(self.k_similarity_shelf_path)
 
-        similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
-        
+        similarities_total_count = math.comb(len(self.decks_and_clusters_by_contents), 2)
+
         manager = mp.Manager()
         tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=10000)
         outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=10000)
@@ -741,11 +781,22 @@ class HDBSCANClusterEngine(ClusterEngine):
                     num_outputs_received += 1
                     similarity_shelf[f"{output[0][0]},{output[0][1]}"] = output[1]
 
-                    d1: deck.Deck = self.decks_and_clusters[output[0][0]]
-                    d2: deck.Deck = self.decks_and_clusters[output[0][1]]
-                    d1.k_similarity_push((output[1], d2.id))
-                    d2.k_similarity_push((output[1], d1.id))
-                    print(f"  Calculated similarity for {output[0][0].ljust(32)} and {output[0][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
+                    d1: deck.DeckLike = self.decks_and_clusters_by_contents[output[0][0]]
+                    d2: deck.DeckLike = self.decks_and_clusters_by_contents[output[0][1]]
+
+                    self.k_similarity_push(d1.contents_hash, (output[1], d2.contents_hash))
+                    self.k_similarity_push(d2.contents_hash, (output[1], d1.contents_hash))
+
+                    print(f"  Calculated similarity for {d1.id.ljust(32)} and {d2.id.ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
+
+        print("")
+        count = 0
+        for content_hash, d in self.decks_and_clusters_by_contents.items():
+            d._k_distance = 0.5 - self.k_similarities[content_hash][-1][0]
+            count += 1
+            del self.k_similarities[content_hash]
+            print(f"  Cached k-distance for {d.id.ljust(32)}... (Progress: {count}/{len(self.decks_and_clusters_by_contents)})", end="\r")
+
 
         end_time = datetime.now()
         print(f"\nSimilarity matrix built. (Time taken: {(end_time - start_time)})")
@@ -754,7 +805,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         print(f"Saving similarities to {filename}...")
         with open(filename, "wb") as file:
             pickler = pickle.Pickler(file)
-            pickler.dump((self.decks_and_clusters, self.similarities))
+            pickler.dump((self.decks_and_clusters_by_contents, self.similarities))
 
     def _mut_reach_fill_queue(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], num_threads):
         """
@@ -772,7 +823,7 @@ class HDBSCANClusterEngine(ClusterEngine):
                 tasks.put(signal, block=True)
                 stop_signals_queued += 1
 
-    def _compute_mut_reach(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], output: mpq.Queue[tuple[tuple[str, str], float]]):
+    def _compute_mut_reach(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], output: mpq.Queue[tuple[tuple[str, str], float, tuple[str, str]]]):
         """
         Worker process for mutual reachability calculation. Calculates the similarity of the provided decks/clusters and put it in the output queue.
         """
@@ -782,10 +833,11 @@ class HDBSCANClusterEngine(ClusterEngine):
                 output.put(None, block=True)
                 break
             pair, similarity = t
-            d1 = self.original_decks[pair[0]]
-            d2 = self.original_decks[pair[1]]
+            d1 = self.decks_and_clusters_by_contents[pair[0]]
+            d2 = self.decks_and_clusters_by_contents[pair[1]]
             mut_reach = max(d1.k_distance, d2.k_distance, 0.5 - similarity)
-            output.put((pair, mut_reach), block=True)
+
+            output.put((pair, mut_reach, (d1.id, d2.id)), block=True)
 
     def _calculate_mutual_reachabilities(self):
         """
@@ -804,11 +856,11 @@ class HDBSCANClusterEngine(ClusterEngine):
         if os.path.isfile(self.mut_reach_shelf_path):
             os.remove(self.mut_reach_shelf_path)
 
-        similarities_total_count = math.comb(len(self.decks_and_clusters), 2)
+        similarities_total_count = math.comb(len(self.decks_and_clusters_by_contents), 2)
 
         manager = mp.Manager()
-        tasks: mpq.Queue[tuple[deck.DeckLike, deck.DeckLike] | None] = manager.Queue(maxsize=100000)
-        outputs: mpq.Queue[tuple[tuple[str, str], float]] = manager.Queue(maxsize=100000)
+        tasks: mpq.Queue[tuple[tuple[str, str], float] | None] = manager.Queue(maxsize=10000)
+        outputs: mpq.Queue[tuple[tuple[str, str], float, tuple[str, str]]] = manager.Queue(maxsize=10000)
 
         processes = []
 
@@ -835,20 +887,52 @@ class HDBSCANClusterEngine(ClusterEngine):
                 else:
                     num_outputs_received += 1
 
-                    d1_id, d2_id = output[0]
+                    d1_content_hash, d2_content_hash = output[0]
                     mut_reach = output[1]
 
-                    d1_mut_reach: list[float, str, str] = mut_reach_shelf.get(d1_id, [])
-                    d2_mut_reach: list[float, str, str] = mut_reach_shelf.get(d2_id, [])
-                    heapq.heappush(d1_mut_reach, (mut_reach, d1_id, d2_id))
-                    heapq.heappush(d2_mut_reach, (mut_reach, d2_id, d1_id))
-                    mut_reach_shelf[d1_id] = d1_mut_reach
-                    mut_reach_shelf[d2_id] = d2_mut_reach
+                    d1_mut_reach: list[float, str, str] = mut_reach_shelf.get(d1_content_hash, [])
+                    d2_mut_reach: list[float, str, str] = mut_reach_shelf.get(d2_content_hash, [])
+                    heapq.heappush(d1_mut_reach, (mut_reach, d1_content_hash, d2_content_hash))
+                    heapq.heappush(d2_mut_reach, (mut_reach, d2_content_hash, d1_content_hash))
+                    mut_reach_shelf[d1_content_hash] = d1_mut_reach
+                    mut_reach_shelf[d2_content_hash] = d2_mut_reach
 
-                    print(f"  Calculated mutual reachability for {d1_id} and {d2_id} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
+                    print(f"  Calculated mutual reachability for {output[2][0].ljust(32)} and {output[2][1].ljust(32)} (Progress: {num_outputs_received}/{similarities_total_count})", end="\r")
             
         end_time = datetime.now()
         print(f"\nMutual reachabilities calculated. (Time taken: {(end_time - start_time)})")
+
+    def _unfurl_cluster_mut_reach(self, content_hash: str, root_deck_id: str) -> list[tuple[float, str, str]]:
+        '''
+        Obtains mutual reachability values on a per-deck basis (as opposed to a per deck cluster basis) from the mutual reachability shelf.
+        '''
+        with shelve.open(self.mut_reach_shelf_path, flag="w") as mut_reach_shelf:
+            ch_mut_reaches: list[tuple[float, str, str]] = mut_reach_shelf[content_hash]
+            # del mut_reach_shelf[content_hash]
+
+        output = []
+
+        root_deck = self.original_decks[root_deck_id]
+        d = self.decks_and_clusters_by_contents[content_hash]
+        if isinstance(d, deck.DeckCluster):
+            other_identical_decks = d.decks - {root_deck}
+            for other_deck in other_identical_decks:
+                output.append((0, root_deck_id, other_deck.id))
+
+        for mut_reach, _, other_ch in ch_mut_reaches:
+            other_d = self.decks_and_clusters_by_contents[other_ch]
+            if isinstance(other_d, deck.DeckCluster):
+                other_decks = other_d.decks
+            else:
+                other_decks: set[deck.Deck] = {other_d}
+
+            for other_deck in other_decks:
+                output.append((mut_reach, root_deck_id, other_deck.id))
+
+            # for d1, d2 in itertools.product(these_decks, other_decks):
+            #     output.append((mut_reach, min(d1.id, d2.id), max(d1.id, d2.id)))
+
+        return output
 
     def _build_spanning_tree(self):
         '''
@@ -857,23 +941,30 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Building spanning tree...")
 
+        # Set of content hashes that has been retrieved from the mutual reachability shelf
+        unfurled_mut_reaches: set[str] = set() 
+        # Set of decks that have been already added to the tree (to avoid loops)
         spanning_tree_decks: set[str] = set()
 
-        self.spanning_tree_root: deck.Deck = self.decks_and_clusters[next(iter(self.original_decks))]
+        # Initialize tree root
+        self.spanning_tree_root: deck.Deck = self.original_decks[next(iter(self.original_decks))]
         spanning_tree_decks.add(self.spanning_tree_root.id)
-        with shelve.open(self.mut_reach_shelf_path, flag="r") as mut_reach_shelf:
-            tree_similarities: list[tuple[float, str, str]] = mut_reach_shelf[self.spanning_tree_root.id]
+        tree_similarities = self._unfurl_cluster_mut_reach(self.spanning_tree_root.contents_hash, self.spanning_tree_root.id)
+        unfurled_mut_reaches.add(self.spanning_tree_root.contents_hash)
 
-            while len(spanning_tree_decks) < len(self.original_decks):
-                mut_reach_dist, this_deck_id, other_deck_id = heapq.heappop(tree_similarities)
-                if other_deck_id not in spanning_tree_decks:
-                    spanning_tree_decks.add(other_deck_id)
-                    heapq.heappush(self.spanning_tree_distances, (mut_reach_dist, self.decks_and_clusters[this_deck_id], self.decks_and_clusters[other_deck_id]))
+        while len(spanning_tree_decks) < len(self.original_decks):
+            mut_reach_dist, this_deck_id, other_deck_id = heapq.heappop(tree_similarities)
+            if other_deck_id not in spanning_tree_decks:
+                spanning_tree_decks.add(other_deck_id)
+                heapq.heappush(self.spanning_tree_distances, (mut_reach_dist, self.original_decks[this_deck_id], self.original_decks[other_deck_id]))
 
-                    other_deck_mut_reach: list[tuple[float, str, str]] = mut_reach_shelf[other_deck_id]
-                    for new_mut_reach in other_deck_mut_reach:
+                other_deck_contents_hash = self.original_decks[other_deck_id].contents_hash
+                if other_deck_contents_hash not in unfurled_mut_reaches:
+                    other_deck_mut_reaches = self._unfurl_cluster_mut_reach(other_deck_contents_hash, other_deck_id)
+                    unfurled_mut_reaches.add(other_deck_contents_hash)
+                    for new_mut_reach in other_deck_mut_reaches:
                         heapq.heappush(tree_similarities, new_mut_reach)
-                    print(f"  Connected {other_deck_id} to the spanning tree (Progress: {len(spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
+                print(f"  Connected {other_deck_id} to the spanning tree (Progress: {len(spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
 
         end_time = datetime.now()
         print(f"\nSpanning tree built. (Time taken: {(end_time - start_time)})")
@@ -897,7 +988,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Beginning clustering of decks with HDBSCAN* method...")
 
-        self.cluster_hierarchy = ClusterHierarchy(self.decks_and_clusters.values(), self.spanning_tree_distances)
+        self.cluster_hierarchy = ClusterHierarchy(self.original_decks.values(), self.spanning_tree_distances)
         self.cluster_hierarchy.build_hierarchy()
 
         self.cluster_hierarchy.condense_tree()
@@ -917,6 +1008,8 @@ class HDBSCANClusterEngine(ClusterEngine):
             pickler.dump((self.clusters, self.rogue_decks))
 
     def cluster(self):
+        self._auto_cluster_identical_decks()
+
         # Initial similarity matrix build
         self._build_initial_similarity_matrix()
 
