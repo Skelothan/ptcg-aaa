@@ -716,7 +716,7 @@ class HDBSCANClusterEngine(ClusterEngine):
 
             output.put(((min(d1.contents_hash, d2.contents_hash), max(d1.contents_hash, d2.contents_hash)), similarity), block=True)
 
-    def k_similarity_push(self, content_hash, similarity: tuple[float, str]):
+    def k_similarity_push(self, contents_hash, similarity: tuple[float, str]):
         """
         Writes a similarity of the deck/cluster with provided content hash to a shelf of similarities specifically for K-distance calculation.
 
@@ -727,12 +727,16 @@ class HDBSCANClusterEngine(ClusterEngine):
         similarity : tuple[float, str]
             The similarity (float) of this Deck to the Deck with content hash (str).
         """
-        if content_hash not in self.k_similarities.keys():
-            self.k_similarities[content_hash] = []
+        if contents_hash not in self.k_similarities.keys():
+            self.k_similarities[contents_hash] = []
 
-        self.k_similarities[content_hash].append(similarity)
-        self.k_similarities[content_hash].sort(reverse=True)
-        del self.k_similarities[content_hash][CONFIG["K_THRESHOLD"]:]
+        this_decklike: deck.DeckLike = self.decks_and_clusters_by_contents[contents_hash]
+        other_decklike: deck.DeckLike = self.decks_and_clusters_by_contents[similarity[1]]
+            
+        for _ in range(other_decklike.num_decks):
+            self.k_similarities[contents_hash].append(similarity)
+        self.k_similarities[contents_hash].sort(reverse=True)
+        del self.k_similarities[contents_hash][(CONFIG["K_THRESHOLD"] - this_decklike.num_decks + 1):]
 
     def _build_initial_similarity_matrix(self):
         """
