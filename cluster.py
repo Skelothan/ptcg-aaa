@@ -896,8 +896,8 @@ class HDBSCANClusterEngine(ClusterEngine):
 
                     d1_mut_reach: list[float, str, str] = mut_reach_shelf.get(d1_content_hash, [])
                     d2_mut_reach: list[float, str, str] = mut_reach_shelf.get(d2_content_hash, [])
-                    heapq.heappush(d1_mut_reach, (mut_reach, d1_content_hash, d2_content_hash))
-                    heapq.heappush(d2_mut_reach, (mut_reach, d2_content_hash, d1_content_hash))
+                    d1_mut_reach.append((mut_reach, d2_content_hash))
+                    d2_mut_reach.append((mut_reach, d1_content_hash))
                     mut_reach_shelf[d1_content_hash] = d1_mut_reach
                     mut_reach_shelf[d2_content_hash] = d2_mut_reach
 
@@ -912,7 +912,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         '''
         with shelve.open(self.mut_reach_shelf_path, flag="w") as mut_reach_shelf:
             ch_mut_reaches: list[tuple[float, str, str]] = mut_reach_shelf[content_hash]
-            # del mut_reach_shelf[content_hash]
+            del mut_reach_shelf[content_hash]
 
         output = []
 
@@ -925,7 +925,7 @@ class HDBSCANClusterEngine(ClusterEngine):
                 # because distance always = 0 and each node's K is the same.
                 output.append((d.k_distance, root_deck_id, other_deck.id))
 
-        for mut_reach, _, other_ch in ch_mut_reaches:
+        for mut_reach, other_ch in ch_mut_reaches:
             other_d = self.decks_and_clusters_by_contents[other_ch]
             if isinstance(other_d, deck.DeckCluster):
                 other_decks = other_d.decks
