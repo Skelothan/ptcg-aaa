@@ -921,7 +921,9 @@ class HDBSCANClusterEngine(ClusterEngine):
         if isinstance(d, deck.DeckCluster):
             other_identical_decks = d.decks - {root_deck}
             for other_deck in other_identical_decks:
-                output.append((0, root_deck_id, other_deck.id))
+                # For two decks in the same cluster, MR = cluster's K distance
+                # because distance always = 0 and each node's K is the same.
+                output.append((d.k_distance, root_deck_id, other_deck.id))
 
         for mut_reach, _, other_ch in ch_mut_reaches:
             other_d = self.decks_and_clusters_by_contents[other_ch]
@@ -954,6 +956,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         self.spanning_tree_root: deck.Deck = self.original_decks[next(iter(self.original_decks))]
         spanning_tree_decks.add(self.spanning_tree_root.id)
         tree_similarities = self._unfurl_cluster_mut_reach(self.spanning_tree_root.contents_hash, self.spanning_tree_root.id)
+        heapq.heapify(tree_similarities)
         unfurled_mut_reaches.add(self.spanning_tree_root.contents_hash)
 
         while len(spanning_tree_decks) < len(self.original_decks):
