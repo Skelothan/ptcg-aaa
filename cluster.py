@@ -1003,7 +1003,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         self.cluster_hierarchy.select_clusters_cohesion(self.card_counter)
 
         end_time = datetime.now()
-        print(f"Finished clustering. (Time taken: {(end_time - start_time)})")
+        print(f"Archetypes determined. (Time taken: {(end_time - start_time)})")
 
         self.clusters = {c.id: c for c in self.cluster_hierarchy.selected_clusters}
         self.rogue_decks = self.cluster_hierarchy.rogue_decks
@@ -1015,13 +1015,17 @@ class HDBSCANClusterEngine(ClusterEngine):
             pickler.dump((self.clusters, self.rogue_decks))
 
     def cluster(self):
+        start_time = datetime.now()
+
         self._auto_cluster_identical_decks()
 
-        # Initial similarity matrix build
         self._build_initial_similarity_matrix()
 
         self._calculate_mutual_reachabilities()
         self._build_spanning_tree()
 
         self._hdbscan_hierarchical_cluster()
+
+        end_time = datetime.now()
+        print(f"\nFinished! (Total time taken: {(end_time - start_time)})")
         
