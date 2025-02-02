@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import hashlib
+import math
 import re
 from collections import Counter
 from datetime import date
@@ -79,8 +80,10 @@ class DeckLike(metaclass=abc.ABCMeta):
     """
 
     def __init__(self):
+        self._k_distance: float | None = None
         raise NotImplementedError
 
+    @property
     @abc.abstractmethod
     def contents_hash() -> int:
         raise NotImplementedError
@@ -103,6 +106,11 @@ class DeckLike(metaclass=abc.ABCMeta):
     @property
     @abc.abstractmethod
     def decklist(self) -> Counter:
+        raise NotImplementedError
+    
+    @property
+    @abc.abstractmethod
+    def k_distance(self) -> float | None:
         raise NotImplementedError
     
     def __eq__(self, other: DeckLike):
@@ -250,30 +258,10 @@ class Deck(DeckLike):
             decklist_dict[card_name] = card.get("count")
 
         self._decklist = Counter(decklist_dict)
-    
-    def k_similarity_push(self, similarity: tuple[float, str]):
-        """
-        Add a similarity to this deck's internal list of similarities for K-distance calculation.
-
-        Will only store up to CONFIG["K_THRESHOLD"] values — others are not needed. Extra values will be deleted to reduce memory usage.
-        
-        Parameters
-        ----------
-        similarity : tuple[float, str]
-            The similarity (float) of this Deck to the Deck with id (str).
-        """
-        self.k_most_similarities.append(similarity)
-        self.k_most_similarities.sort(reverse=True)
-        del self.k_most_similarities[CONFIG["K_THRESHOLD"]:]
-
-    def _get_k_distance(self) -> float:
-        self._k_distance = 0.5 - self.k_most_similarities[-1][0]
-        del self.k_most_similarities
-        return self._k_distance
 
     @property
-    def k_distance(self) -> float:
-        return 0.5 - self.k_most_similarities[-1][0]
+    def k_distance(self) -> float | None:
+        return self._k_distance
         
     def __repr__(self) -> str:
         return f"<Deck: {self.title}>"
@@ -293,8 +281,12 @@ class Deck(DeckLike):
         else:
             raise TypeError(f"Cannot add item of type {type(other)} to Deck")
         
-    def contents_hash(self) -> int:
-        return hash(str(sorted(self.decklist.items())))
+    @property
+    def contents_hash(self) -> str:
+        return hashlib.blake2b(
+            str(sorted(self.decklist.items())).encode("UTF-8"),
+            digest_size=16,
+        ).hexdigest()
 
     @property
     def title(self) -> str:
@@ -326,6 +318,7 @@ class DeckCluster(DeckLike):
         self._title = f"Cluster {self.number}"
         DeckCluster.cluster_number += 1
         self.decks: set[Deck] = set()
+        self._k_distance: float | None = None
 
     def add_deck(self, deck: Deck):
         self.decks.add(deck)
@@ -363,9 +356,13 @@ class DeckCluster(DeckLike):
     def __len__(self) -> int:
         return len(self.decks)
     
-    def contents_hash(self) -> int:
-        return hash(str(sorted(self.decklist.items())))
-
+    @property
+    def contents_hash(self) -> str:
+        return hashlib.blake2b(
+            str(sorted(Counter({k: int(round(v,0)) if math.isclose(v, round(v,0)) else v for k, v in self.decklist.items()}).items())).encode("UTF-8"),
+            digest_size=16,
+        ).hexdigest()
+    
     @property
     def title(self) -> str:
         return self._title
@@ -389,6 +386,10 @@ class DeckCluster(DeckLike):
     @property
     def num_decks(self) -> int:
         return len(self.decks)
+    
+    @property
+    def k_distance(self) -> float | None:
+        return self._k_distance
     
 
 class CardCounter:

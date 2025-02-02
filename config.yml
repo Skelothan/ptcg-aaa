@@ -1,5 +1,5 @@
 # The raw tournament results list to use
-TOURNAMENT_LIST: tournaments_2024-12-15.json
+TOURNAMENT_LIST: tournaments_2025-01-16.json
 # The format to download decklists from or analyze.
 TOURNAMENT_FORMAT_FILTER: "BRS-SSP"
 # The minimum number of players in a tournament needed to 
@@ -18,8 +18,8 @@ SIMILARITY_METHOD: "get_deck_max_possible_inclusion_weighted_Jaccard"
 # UPGMA only. Valid range: 0 - 0.5 (only identical decks)
 CLUSTER_SIMILARITY_THRESHOLD: 0.25
 # Minimum number of decks in a cluster.
-ROGUE_DECK_THRESHOLD: 5
+ROGUE_DECK_THRESHOLD: 397
 
 # HDBSCAN only. Used to estimate cluster density. 
 # Bigger values makes decks more likely to be considered rogue.
-K_THRESHOLD: 16
+K_THRESHOLD: 397
