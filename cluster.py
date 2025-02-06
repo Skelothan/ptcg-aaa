@@ -716,6 +716,27 @@ class HDBSCANClusterEngine(ClusterEngine):
 
             output.put(((min(d1.contents_hash, d2.contents_hash), max(d1.contents_hash, d2.contents_hash)), similarity), block=True)
 
+    def load_similarities(self):
+        filename = self.SAVE_PATH + ".aaasim"
+        print(f"Loading similarities from {filename}...")
+        with open(filename, "rb") as file:
+            pickler = pickle.Unpickler(file)
+            (self.decks_and_clusters_by_contents, self.similarities) = pickler.load()
+
+    def load_spanning_tree(self):
+        filename = self.SAVE_PATH + ".aaatree"
+        print(f"Loading similarities from {filename}...")
+        with open(filename, "rb") as file:
+            pickler = pickle.Unpickler(file)
+            (self.spanning_tree_root, self.spanning_tree_distances) = pickler.load()
+
+    def load_cluster_hierarchy(self):
+        filename = self.SAVE_PATH + ".aaaclusters"
+        print(f"Loading similarities from {filename}...")
+        with open(filename, "rb") as file:
+            pickler = pickle.Unpickler(file)
+            (self.cluster_hierarchy, self.clusters, self.rogue_decks) = pickler.load()
+
     def k_similarity_push(self, contents_hash, similarity: tuple[float, str]):
         """
         Writes a similarity of the deck/cluster with provided content hash to a shelf of similarities specifically for K-distance calculation.
@@ -1008,11 +1029,11 @@ class HDBSCANClusterEngine(ClusterEngine):
         self.clusters = {c.id: c for c in self.cluster_hierarchy.selected_clusters}
         self.rogue_decks = self.cluster_hierarchy.rogue_decks
 
-        filename = self.SAVE_PATH + ".aaaarch"
+        filename = self.SAVE_PATH + ".aaaclusters"
         print(f"Saving archetypes to {filename}...")
         with open(filename, "wb") as file:
             pickler = pickle.Pickler(file)
-            pickler.dump((self.clusters, self.rogue_decks))
+            pickler.dump((self.cluster_hierarchy, self.clusters, self.rogue_decks))
 
     def cluster(self):
         start_time = datetime.now()

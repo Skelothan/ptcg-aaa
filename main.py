@@ -195,9 +195,9 @@ def main():
                 D1. Download tournament results
                   
                 == Load data ==
-                L1. 
-                L2.
-                L3.
+                L1. Load calculated similarities
+                L2. Load spanning tree
+                L3. Load final clusters
                   
                 == Process data == 
                 P1. Suggest K-threshold
@@ -231,6 +231,12 @@ def main():
         match option:
             case "d1":
                 download_tournament_results()
+            case "l1":
+                cluster_engine.load_similarities()
+            case "l2":
+                cluster_engine.load_spanning_tree()
+            case "l3":
+                cluster_engine.load_cluster_hierarchy()
             case "p1":
                 suggest_k_threshold(decks, card_counter)
             case "p2":
