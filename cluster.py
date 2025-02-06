@@ -333,7 +333,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         self.card_counter = card_counter
         self.original_decks = decks
         self.decks_and_clusters: dict[str, deck.DeckLike] = copy.copy(decks)
-        self.decks_and_clusters_by_contents: dict[int, deck.DeckLike]
+        self.decks_and_clusters_by_contents: dict[str, deck.DeckLike]
         self.clusters: dict[str, deck.DeckCluster]
         self.rogue_decks: set[deck.Deck] = set()
         self.similarities: dict[tuple[str, str], float] = {}
@@ -846,12 +846,13 @@ class HDBSCANClusterEngine(ClusterEngine):
         """
         Producer process for mutual reachability calculation. Fills the tasks queue with pairs of decks.
         """
+        similarities_to_calc = itertools.combinations(self.decks_and_clusters_by_contents.keys(), 2)
+
         with shelve.open(self.similarity_shelf_path, flag="r") as similarity_shelf:
-            similarities_to_calc = similarity_shelf.items()
             num_tasks_queued = 0
             for pair in similarities_to_calc:
-                pair = (tuple(pair[0].split(",")), pair[1])
-                tasks.put(pair, block=True)
+                pair = (min(pair[0], pair[1]), max([pair[0], pair[1]]))
+                tasks.put((pair, similarity_shelf[f"{pair[0]},{pair[1]}"]), block=True)
                 num_tasks_queued += 1
             stop_signals_queued = 0
             for signal in [None] * num_threads:
