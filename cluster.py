@@ -842,38 +842,39 @@ class HDBSCANClusterEngine(ClusterEngine):
             pickler = pickle.Pickler(file)
             pickler.dump((self.decks_and_clusters_by_contents, self.similarities))
 
-    def _mut_reach_fill_queue(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], num_threads):
+    def _mut_reach_fill_queue(self, tasks: mpq.Queue[tuple[str, str] | None], num_threads):
         """
         Producer process for mutual reachability calculation. Fills the tasks queue with pairs of decks.
         """
         similarities_to_calc = itertools.combinations(self.decks_and_clusters_by_contents.keys(), 2)
 
-        with shelve.open(self.similarity_shelf_path, flag="r") as similarity_shelf:
-            num_tasks_queued = 0
-            for pair in similarities_to_calc:
-                pair = (min(pair[0], pair[1]), max([pair[0], pair[1]]))
-                tasks.put((pair, similarity_shelf[f"{pair[0]},{pair[1]}"]), block=True)
-                num_tasks_queued += 1
-            stop_signals_queued = 0
-            for signal in [None] * num_threads:
-                tasks.put(signal, block=True)
-                stop_signals_queued += 1
+        num_tasks_queued = 0
+        for pair in similarities_to_calc:
+            pair = (min(pair[0], pair[1]), max([pair[0], pair[1]]))
+            tasks.put((pair), block=True)
+            num_tasks_queued += 1
+        stop_signals_queued = 0
+        for signal in [None] * num_threads:
+            tasks.put(signal, block=True)
+            stop_signals_queued += 1
 
-    def _compute_mut_reach(self, tasks: mpq.Queue[tuple[tuple[str, str], float] | None], output: mpq.Queue[tuple[tuple[str, str], float, tuple[str, str]]]):
+    def _compute_mut_reach(self, tasks: mpq.Queue[tuple[str, str] | None], output: mpq.Queue[tuple[tuple[str, str], float, tuple[str, str]]]):
         """
         Worker process for mutual reachability calculation. Calculates the similarity of the provided decks/clusters and put it in the output queue.
         """
         while True:
-            t = tasks.get(block=True)
-            if t is None:
-                output.put(None, block=True)
-                break
-            pair, similarity = t
-            d1 = self.decks_and_clusters_by_contents[pair[0]]
-            d2 = self.decks_and_clusters_by_contents[pair[1]]
-            mut_reach = max(d1.k_distance, d2.k_distance, 0.5 - similarity)
+            with shelve.open(self.similarity_shelf_path, flag="r") as similarity_shelf:
+                t = tasks.get(block=True)
+                if t is None:
+                    output.put(None, block=True)
+                    break
+                pair = t
+                similarity = similarity_shelf[f"{pair[0]},{pair[1]}"]
+                d1 = self.decks_and_clusters_by_contents[pair[0]]
+                d2 = self.decks_and_clusters_by_contents[pair[1]]
+                mut_reach = max(d1.k_distance, d2.k_distance, 0.5 - similarity)
 
-            output.put((pair, mut_reach, (d1.id, d2.id)), block=True)
+                output.put((pair, mut_reach, (d1.id, d2.id)), block=True)
 
     def _calculate_mutual_reachabilities(self):
         """
@@ -895,7 +896,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         similarities_total_count = math.comb(len(self.decks_and_clusters_by_contents), 2)
 
         manager = mp.Manager()
-        tasks: mpq.Queue[tuple[tuple[str, str], float] | None] = manager.Queue(maxsize=10000)
+        tasks: mpq.Queue[tuple[str, str] | None] = manager.Queue(maxsize=10000)
         outputs: mpq.Queue[tuple[tuple[str, str], float, tuple[str, str]]] = manager.Queue(maxsize=10000)
 
         processes = []
