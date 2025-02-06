@@ -214,7 +214,8 @@ def main():
                 R2. Print archetype report
                 R3. Print rogue deck report
                 R4. Print metagame report
-               [R5. TBD: Print deck spiciness report]
+                R5. Print archetype tree
+               [R6. TBD: Print deck spiciness report]
                 
                 X. Exit
                 """)
@@ -258,6 +259,7 @@ def main():
                 cluster_engine.print_cluster_report()
                 cluster_engine.print_rogue_deck_report()
                 cluster_engine.print_metagame_report()
+                cluster_engine.print_cluster_tree()
             case "r1":
                 print_card_usage_report(card_counter)
             case "r2":
@@ -266,6 +268,8 @@ def main():
                 cluster_engine.print_rogue_deck_report()
             case "r4":
                 cluster_engine.print_metagame_report()
+            case "r5":
+                cluster_engine.print_cluster_tree()
             case _:
                 quit()
     

@@ -56,8 +56,9 @@ class ClusterHierarchyNode:
                 self.contents.add(i)
 
         self.distance = distance
+        self.death_distance: float | None = None
         self.stability: float | None = None
-        self.deck_cluster: deck.DeckCluster
+        self.deck_cluster: deck.DeckCluster | None = None
         self.cohesion: float
 
     @property
@@ -68,11 +69,15 @@ class ClusterHierarchyNode:
         return hash(self.children)
 
     def __repr__(self) -> str:
-        if self.stability:
-            return f"<ClusterHierarchyNode: size {self.size}, stability {round(self.stability, 2)}>"
-        if self.deck_cluster and self.cohesion:
-            return f"<ClusterHierarchyNode({self.deck_cluster.title}): size {self.size}, cohesion {round(self.cohesion, 2)}>"
-        return f"<ClusterHierarchyNode: size {self.size}>"
+        # if self.stability:
+        #     return f"<ClusterHierarchyNode: size {self.size}, stability {round(self.stability, 2)}>"
+        # if self.deck_cluster and self.cohesion:
+        #     return f"<ClusterHierarchyNode({self.deck_cluster.title}): size {self.size}, cohesion {round(self.cohesion, 2)}>"
+        if self.deck_cluster and self.death_distance:
+            return f"<CH Node({self.deck_cluster.title}): size {self.size}, dist: {round(1 / self.distance, 2)}, death: {round(1 / self.death_distance, 2)}>"
+        elif self.deck_cluster:
+            return f"<CH Node({self.deck_cluster.title}): size {self.size}, dist: {round(1 / self.distance, 2)}>"
+        return f"<CH Node: size {self.size}>"
 
 
 class ClusterHierarchy():
@@ -147,6 +152,7 @@ class ClusterHierarchy():
 
     def _mark_death_distances(self, item: ClusterHierarchyNode | deck.Deck, distance: float):
         if isinstance(item, ClusterHierarchyNode):
+            item.death_distance = distance
             for d in item.contents:
                 d.death_distance = distance
         else:
@@ -192,6 +198,7 @@ class ClusterHierarchy():
             match child_sizes:
                 case 3: # True split
                     self.condensed_tree[parent] = (child1, child2)
+                    parent.death_distance = current_node.distance
                     tasks.append((child2, child2))
                     tasks.append((child1, child1))
                 case 2:
@@ -285,6 +292,9 @@ class ClusterHierarchy():
         #     c.cohesion = sum([card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(c.deck_cluster, d) for d in c.deck_cluster.decks]) / len(c.deck_cluster.decks)
 
         selected_clusters = all_sets - self.condensed_tree.keys()
+
+        for c in all_sets:
+            c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
 
         for c in selected_clusters:
             c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
@@ -725,14 +735,14 @@ class HDBSCANClusterEngine(ClusterEngine):
 
     def load_spanning_tree(self):
         filename = self.SAVE_PATH + ".aaatree"
-        print(f"Loading similarities from {filename}...")
+        print(f"Loading spanning tree from {filename}...")
         with open(filename, "rb") as file:
             pickler = pickle.Unpickler(file)
             (self.spanning_tree_root, self.spanning_tree_distances) = pickler.load()
 
     def load_cluster_hierarchy(self):
         filename = self.SAVE_PATH + ".aaaclusters"
-        print(f"Loading similarities from {filename}...")
+        print(f"Loading cluster hierarchy from {filename}...")
         with open(filename, "rb") as file:
             pickler = pickle.Unpickler(file)
             (self.cluster_hierarchy, self.clusters, self.rogue_decks) = pickler.load()
@@ -1034,6 +1044,22 @@ class HDBSCANClusterEngine(ClusterEngine):
         with open(filename, "wb") as file:
             pickler = pickle.Pickler(file)
             pickler.dump((self.cluster_hierarchy, self.clusters, self.rogue_decks))
+
+    def rename_archetypes(self):
+        super().rename_archetypes()
+
+        filename = self.SAVE_PATH + ".aaaclusters"
+        print(f"Saving archetypes to {filename}...")
+        with open(filename, "wb") as file:
+            pickler = pickle.Pickler(file)
+            pickler.dump((self.cluster_hierarchy, self.clusters, self.rogue_decks))
+
+    def print_cluster_tree(self):
+        filename = f"reports/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_cluster_tree.txt"
+        with open(filename, "w") as file:
+            for node, leaves in self.cluster_hierarchy.condensed_tree.items():
+                file.write(f"{node}: {leaves}\n")
+        print(f"Saved cluster tree report to {filename}.")
 
     def cluster(self):
         start_time = datetime.now()
