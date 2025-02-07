@@ -248,7 +248,6 @@ def main():
             case "p3a":
                 cluster_engine._build_initial_similarity_matrix()
             case "p3b":
-                cluster_engine._calculate_mutual_reachabilities()
                 cluster_engine._build_spanning_tree()
             case "p3c":
                 cluster_engine._hdbscan_hierarchical_cluster()

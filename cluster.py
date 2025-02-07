@@ -698,7 +698,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         super().__init__(card_counter, decks)
 
         self.spanning_tree_root: deck.Deck
-        self.spanning_tree_distances: list[tuple[float, deck.Deck, deck.Deck]] = []
+        self.spanning_tree: list[tuple[float, deck.Deck, deck.Deck]] = []
         self.cluster_hierarchy: ClusterHierarchy | None = None
         
         self.k_similarities: dict[str, list[tuple[float, str]]] = {}
@@ -738,7 +738,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         print(f"Loading spanning tree from {filename}...")
         with open(filename, "rb") as file:
             pickler = pickle.Unpickler(file)
-            (self.spanning_tree_root, self.spanning_tree_distances) = pickler.load()
+            (self.spanning_tree_root, self.spanning_tree) = pickler.load()
 
     def load_cluster_hierarchy(self):
         filename = self.SAVE_PATH + ".aaaclusters"
@@ -876,7 +876,7 @@ class HDBSCANClusterEngine(ClusterEngine):
 
                 output.put((pair, mut_reach, (d1.id, d2.id)), block=True)
 
-    def _calculate_mutual_reachabilities(self):
+    def _calculate_all_mutual_reachabilities(self):
         """
         Calculates mutual reachability for each pair of decks from the previously calculated distances.
         This is what lets this algorithm find clusters of varying densities.
@@ -972,6 +972,31 @@ class HDBSCANClusterEngine(ClusterEngine):
             #     output.append((mut_reach, min(d1.id, d2.id), max(d1.id, d2.id)))
 
         return output
+    
+    def _calculate_mutual_reachabilities_for_deck(self, this_ch: str, others: Iterable[str], output_heapq: list[tuple[float, str, str]]):
+        this_decklike = self.decks_and_clusters_by_contents[this_ch]
+        this_id = this_decklike.id
+        if isinstance(this_decklike, deck.DeckCluster):
+            # For two decks in the same cluster, MR = cluster's K distance
+            # because distance always = 0 and each node's K is the same.
+            first_in_cluster = next(iter(this_decklike.decks))
+            other_identical_decks = this_decklike.decks - {first_in_cluster}
+            this_id = first_in_cluster.id
+            for other_identical_deck in other_identical_decks:
+                heapq.heappush(output_heapq, (this_decklike.k_distance, this_id, other_identical_deck.id))
+
+        with shelve.open(self.similarity_shelf_path, flag="r") as similarity_shelf:
+            for other_ch in others:
+                similarity = similarity_shelf[f"{min(this_ch, other_ch)},{max(this_ch, other_ch)}"]
+                other_decklike = self.decks_and_clusters_by_contents[other_ch]
+                mut_reach = max(this_decklike.k_distance, other_decklike.k_distance, 0.5 - similarity)
+
+                if isinstance(other_decklike, deck.DeckCluster):
+                    other_decks = other_decklike.decks
+                else:
+                    other_decks: set[deck.Deck] = {other_decklike}
+                for other_deck in other_decks: 
+                    heapq.heappush(output_heapq, (mut_reach, this_id, other_deck.id))
 
     def _build_spanning_tree(self):
         '''
@@ -981,30 +1006,35 @@ class HDBSCANClusterEngine(ClusterEngine):
         print("Building spanning tree...")
 
         # Set of content hashes that has been retrieved from the mutual reachability shelf
-        unfurled_mut_reaches: set[str] = set() 
+        calculated_content_hashes: set[str] = set() 
         # Set of decks that have been already added to the tree (to avoid loops)
-        spanning_tree_decks: set[str] = set()
+        decks_in_tree: set[str] = set()
+        # Set of content hashes not yet used in the tree
+        content_hashes_to_calc = set(self.decks_and_clusters_by_contents.keys())
+        mut_reach_heapq: list[tuple[float, str, str]] = []
 
         # Initialize tree root
         self.spanning_tree_root: deck.Deck = self.original_decks[next(iter(self.original_decks))]
-        spanning_tree_decks.add(self.spanning_tree_root.id)
-        tree_similarities = self._unfurl_cluster_mut_reach(self.spanning_tree_root.contents_hash, self.spanning_tree_root.id)
-        heapq.heapify(tree_similarities)
-        unfurled_mut_reaches.add(self.spanning_tree_root.contents_hash)
+        cluster_check = self.decks_and_clusters_by_contents[self.spanning_tree_root.contents_hash]
+        if isinstance(cluster_check, deck.DeckCluster):
+            self.spanning_tree_root = next(iter(cluster_check.decks))
+        decks_in_tree.add(self.spanning_tree_root.id)
+        content_hashes_to_calc.remove(self.spanning_tree_root.contents_hash)
+        self._calculate_mutual_reachabilities_for_deck(self.spanning_tree_root.contents_hash, content_hashes_to_calc, mut_reach_heapq)
+        calculated_content_hashes.add(self.spanning_tree_root.contents_hash)
 
-        while len(spanning_tree_decks) < len(self.original_decks):
-            mut_reach_dist, this_deck_id, other_deck_id = heapq.heappop(tree_similarities)
-            if other_deck_id not in spanning_tree_decks:
-                spanning_tree_decks.add(other_deck_id)
-                heapq.heappush(self.spanning_tree_distances, (mut_reach_dist, self.original_decks[this_deck_id], self.original_decks[other_deck_id]))
+        while len(decks_in_tree) < len(self.original_decks):
+            mut_reach_dist, this_deck_id, other_deck_id = heapq.heappop(mut_reach_heapq)
+            if other_deck_id not in decks_in_tree:
+                decks_in_tree.add(other_deck_id)
+                heapq.heappush(self.spanning_tree, (mut_reach_dist, self.original_decks[this_deck_id], self.original_decks[other_deck_id]))
 
                 other_deck_contents_hash = self.original_decks[other_deck_id].contents_hash
-                if other_deck_contents_hash not in unfurled_mut_reaches:
-                    other_deck_mut_reaches = self._unfurl_cluster_mut_reach(other_deck_contents_hash, other_deck_id)
-                    unfurled_mut_reaches.add(other_deck_contents_hash)
-                    for new_mut_reach in other_deck_mut_reaches:
-                        heapq.heappush(tree_similarities, new_mut_reach)
-                print(f"  Connected {other_deck_id} to the spanning tree (Progress: {len(spanning_tree_decks)}/{len(self.original_decks)})", end="\r")
+                if other_deck_contents_hash not in calculated_content_hashes:
+                    content_hashes_to_calc.remove(other_deck_contents_hash)
+                    self._calculate_mutual_reachabilities_for_deck(other_deck_contents_hash, content_hashes_to_calc, mut_reach_heapq)
+                    calculated_content_hashes.add(other_deck_contents_hash)
+                print(f"  Connected {other_deck_id} to the spanning tree (Progress: {len(decks_in_tree)}/{len(self.original_decks)})", end="\r")
 
         end_time = datetime.now()
         print(f"\nSpanning tree built. (Time taken: {(end_time - start_time)})")
@@ -1013,7 +1043,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         print(f"Saving spanning tree to {filename}...")
         with open(filename, "wb") as file:
             pickler = pickle.Pickler(file)
-            pickler.dump((self.spanning_tree_root, self.spanning_tree_distances))
+            pickler.dump((self.spanning_tree_root, self.spanning_tree))
 
     def _hdbscan_hierarchical_cluster(self):
         """
@@ -1028,7 +1058,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         start_time = datetime.now()
         print("Beginning clustering of decks with HDBSCAN* method...")
 
-        self.cluster_hierarchy = ClusterHierarchy(self.original_decks.values(), self.spanning_tree_distances)
+        self.cluster_hierarchy = ClusterHierarchy(self.original_decks.values(), self.spanning_tree)
         self.cluster_hierarchy.build_hierarchy()
 
         self.cluster_hierarchy.condense_tree()
@@ -1070,7 +1100,6 @@ class HDBSCANClusterEngine(ClusterEngine):
 
         self._build_initial_similarity_matrix()
 
-        self._calculate_mutual_reachabilities()
         self._build_spanning_tree()
 
         self._hdbscan_hierarchical_cluster()
