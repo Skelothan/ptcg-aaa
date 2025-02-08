@@ -968,12 +968,9 @@ class HDBSCANClusterEngine(ClusterEngine):
             for other_deck in other_decks:
                 output.append((mut_reach, root_deck_id, other_deck.id))
 
-            # for d1, d2 in itertools.product(these_decks, other_decks):
-            #     output.append((mut_reach, min(d1.id, d2.id), max(d1.id, d2.id)))
-
         return output
     
-    def _calculate_mutual_reachabilities_for_deck(self, this_ch: str, others: Iterable[str], output_heapq: list[tuple[float, str, str]]):
+    def _calculate_mutual_reachabilities_for_deck(self, this_ch: str, others: Iterable[str], min_distances: dict[str, tuple[float, str]]):
         this_decklike = self.decks_and_clusters_by_contents[this_ch]
         this_id = this_decklike.id
         if isinstance(this_decklike, deck.DeckCluster):
@@ -983,7 +980,7 @@ class HDBSCANClusterEngine(ClusterEngine):
             other_identical_decks = this_decklike.decks - {first_in_cluster}
             this_id = first_in_cluster.id
             for other_identical_deck in other_identical_decks:
-                heapq.heappush(output_heapq, (this_decklike.k_distance, this_id, other_identical_deck.id))
+                min_distances[other_identical_deck.id] = (min(this_decklike.k_distance, min_distances.get(other_identical_deck.id, (1,))[0]), this_id)
 
         with shelve.open(self.similarity_shelf_path, flag="r") as similarity_shelf:
             for other_ch in others:
@@ -996,7 +993,7 @@ class HDBSCANClusterEngine(ClusterEngine):
                 else:
                     other_decks: set[deck.Deck] = {other_decklike}
                 for other_deck in other_decks: 
-                    heapq.heappush(output_heapq, (mut_reach, this_id, other_deck.id))
+                    min_distances[other_deck.id] = (min(mut_reach, min_distances.get(other_deck.id, (1,))[0]), this_id)
 
     def _build_spanning_tree(self):
         '''
@@ -1011,7 +1008,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         decks_in_tree: set[str] = set()
         # Set of content hashes not yet used in the tree
         content_hashes_to_calc = set(self.decks_and_clusters_by_contents.keys())
-        mut_reach_heapq: list[tuple[float, str, str]] = []
+        min_distances = {}
 
         # Initialize tree root
         self.spanning_tree_root: deck.Deck = self.original_decks[next(iter(self.original_decks))]
@@ -1020,19 +1017,21 @@ class HDBSCANClusterEngine(ClusterEngine):
             self.spanning_tree_root = next(iter(cluster_check.decks))
         decks_in_tree.add(self.spanning_tree_root.id)
         content_hashes_to_calc.remove(self.spanning_tree_root.contents_hash)
-        self._calculate_mutual_reachabilities_for_deck(self.spanning_tree_root.contents_hash, content_hashes_to_calc, mut_reach_heapq)
+        self._calculate_mutual_reachabilities_for_deck(self.spanning_tree_root.contents_hash, content_hashes_to_calc, min_distances)
         calculated_content_hashes.add(self.spanning_tree_root.contents_hash)
 
         while len(decks_in_tree) < len(self.original_decks):
-            mut_reach_dist, this_deck_id, other_deck_id = heapq.heappop(mut_reach_heapq)
+            other_deck_id = min(min_distances, key=min_distances.get)
+            mut_reach_dist, this_deck_id = min_distances[other_deck_id]
             if other_deck_id not in decks_in_tree:
                 decks_in_tree.add(other_deck_id)
+                del min_distances[other_deck_id]
                 heapq.heappush(self.spanning_tree, (mut_reach_dist, self.original_decks[this_deck_id], self.original_decks[other_deck_id]))
 
                 other_deck_contents_hash = self.original_decks[other_deck_id].contents_hash
                 if other_deck_contents_hash not in calculated_content_hashes:
                     content_hashes_to_calc.remove(other_deck_contents_hash)
-                    self._calculate_mutual_reachabilities_for_deck(other_deck_contents_hash, content_hashes_to_calc, mut_reach_heapq)
+                    self._calculate_mutual_reachabilities_for_deck(other_deck_contents_hash, content_hashes_to_calc, min_distances)
                     calculated_content_hashes.add(other_deck_contents_hash)
                 print(f"  Connected {other_deck_id} to the spanning tree (Progress: {len(decks_in_tree)}/{len(self.original_decks)})", end="\r")
 
