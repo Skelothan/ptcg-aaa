@@ -61,12 +61,18 @@ class ClusterHierarchyNode:
         self.deck_cluster: deck.DeckCluster | None = None
         self.cohesion: float
 
+        self._hash: int | None = None
+
     @property
     def children(self):
         return self._children
+    
+    def _get_hash(self):
+        self._hash = hash(self.children)
+        return self._hash
 
     def __hash__(self):
-        return hash(self.children)
+        return self._hash or self._get_hash()
 
     def __repr__(self) -> str:
         # if self.stability:
