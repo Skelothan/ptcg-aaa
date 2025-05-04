@@ -118,7 +118,7 @@ class ClusterHierarchy():
         self.condensed_tree: dict[ClusterHierarchyNode, tuple[ClusterHierarchyNode, ClusterHierarchyNode]] = {}
         
         self.selected_clusters: list[deck.DeckCluster] = []
-        self.rogue_decks: set[deck.Deck] = set(data)
+        self.rogue_decks: set[deck.DeckLike] = set(data)
 
     def build_hierarchy(self):
         """Produces a hierarchical cluster tree out of the linkage data."""
@@ -193,6 +193,7 @@ class ClusterHierarchy():
     def _do_condense_tree_iterative(self):
         tasks: list[tuple[ClusterHierarchyNode, ClusterHierarchyNode]] = []
         tasks.append((self.root_node, self.root_node))
+        self.rogue_decks = set()
 
         while len(tasks) > 0:
             current_node, parent = tasks.pop()
@@ -210,12 +211,36 @@ class ClusterHierarchy():
                 case 2:
                     self._mark_death_distances(child2, current_node.distance)
                     tasks.append((child1, parent))
+                    
+                    if isinstance(child2, ClusterHierarchyNode):
+                        child2.deck_cluster = functools.reduce(lambda x,y: x+y, child2.contents)
+                        self.selected_clusters.append(child2.deck_cluster)
+                    else:
+                        self.rogue_decks.add(child2)
                 case 1:
                     self._mark_death_distances(child1, current_node.distance)
                     tasks.append((child2, parent))
+                    
+                    if isinstance(child1, ClusterHierarchyNode):
+                        child1.deck_cluster = functools.reduce(lambda x,y: x+y, child1.contents)
+                        self.selected_clusters.append(child1.deck_cluster)
+                    else:
+                        self.rogue_decks.add(child1)
                 case 0:
                     self._mark_death_distances(child1, current_node.distance)
                     self._mark_death_distances(child2, current_node.distance)
+                    
+                    if isinstance(child1, ClusterHierarchyNode):
+                        child1.deck_cluster = functools.reduce(lambda x,y: x+y, child1.contents)
+                        self.selected_clusters.append(child1.deck_cluster)
+                    else:
+                        self.rogue_decks.add(child1)
+                    
+                    if isinstance(child2, ClusterHierarchyNode):
+                        child2.deck_cluster = functools.reduce(lambda x,y: x+y, child2.contents)
+                        self.selected_clusters.append(child2.deck_cluster)
+                    else:
+                        self.rogue_decks.add(child2)
                 case _:
                     raise ValueError(f"Got an unusual child size case when looking at node {current_node} (parent {parent})")
 
@@ -272,7 +297,7 @@ class ClusterHierarchy():
 
         for c in selected_clusters:
             self.selected_clusters.append(c.deck_cluster)
-            self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
+            # self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
 
         print("")
 
@@ -305,7 +330,7 @@ class ClusterHierarchy():
         for c in selected_clusters:
             c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
             self.selected_clusters.append(c.deck_cluster)
-            self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
+            # self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
 
         print("")
 
@@ -341,7 +366,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         self.decks_and_clusters: dict[str, deck.DeckLike] = copy.copy(decks)
         self.decks_and_clusters_by_contents: dict[str, deck.DeckLike]
         self.clusters: dict[str, deck.DeckCluster]
-        self.rogue_decks: set[deck.Deck] = set()
+        self.rogue_decks: set[deck.DeckLike] = set()
         self.similarities: dict[tuple[str, str], float] = {}
 
     def _auto_cluster_identical_decks(self):
@@ -495,26 +520,27 @@ class ClusterEngine(metaclass=abc.ABCMeta):
         """
         Prints a list of all rogue decks.
         """
-        archetype_count = 0
         filename = f"reports/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_rogue_decks.txt"
         with open(filename, "w") as file:
-            file.write(f"Rogue Deck Report: {len(self.rogue_decks)} rogue decks\n\n")
-            for deck in self.rogue_decks:
-                archetype_count += 1
-                longest_card_name_length = max(len(max(deck.decklist.keys(), key=len)), len("Card Name"))
+            file.write(f"Rogue Deck Report: {len(self.rogue_decks)} rogue archetypes\n\n")
+            for decklike in sorted(self.rogue_decks, key=lambda a: a.num_decks, reverse=True):
+                longest_card_name_length = max(len(max(decklike.decklist.keys(), key=len)), len("Card Name"))
                 longest_table_line_length = longest_card_name_length + len(" | Weight | Count")
-                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(deck.decklist).items(), key=lambda p: p[1], reverse=True)
+                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(decklike.decklist).items(), key=lambda p: p[1], reverse=True)
 
-                file.write(f"{deck.title}\n")
+                if isinstance(decklike, deck.DeckCluster):
+                    file.write(f"{decklike.title} ({decklike.num_decks} decks | {round(decklike.num_decks / len(self.original_decks) * 100, 1)}%)\n")
+                else:
+                    file.write(f"{decklike.title}\n")
                 file.write("-" * longest_table_line_length + "\n")
 
-                longest_card_name_length = max(len(max(deck.decklist.keys(), key=len)), len("Card Name"))
-                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(deck.decklist).items(), key=lambda p: p[1], reverse=True)
+                longest_card_name_length = max(len(max(decklike.decklist.keys(), key=len)), len("Card Name"))
+                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(decklike.decklist).items(), key=lambda p: p[1], reverse=True)
                 
                 file.write(f"{'Card Name'.ljust(longest_card_name_length)} | {'Weight'} | {'Count'}\n")
                 file.write(f"{'-' * longest_card_name_length} | {'------'} | {'-----'}\n")
                 for card, count in archetype_cards:
-                    file.write(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get('REPORT_DECIMAL_ROUNDING'))).ljust(4, '0').rjust(6)} | {str(round(deck.decklist.get(card), CONFIG.get('REPORT_DECIMAL_ROUNDING'))).rjust(5)}\n")
+                    file.write(f"{card.ljust(longest_card_name_length)} | {str(round(count, CONFIG.get('REPORT_DECIMAL_ROUNDING'))).ljust(4, '0').rjust(6)} | {str(round(decklike.decklist.get(card), CONFIG.get('REPORT_DECIMAL_ROUNDING'))).rjust(5)}\n")
                 
                 file.write("-" * longest_table_line_length + "\n\n\n")
 
