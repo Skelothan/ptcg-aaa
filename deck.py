@@ -25,9 +25,22 @@ BASIC_ENERGY_NAMES = {
     "Metal Energy",
 }
 
+# Normalizes set codes
 SET_CODE_MAP = {
     "SVP": "PR-SV",
-    "SP": "PR-SW"
+    "SP": "PR-SW",
+    # Correcting Limitless's unofficial set codes
+    "E1": "EX",
+    "E2": "AQ",
+    "E3": "SK",
+    # Following not official for promos but would be consistent with others
+    "SMP": "PR-SM",
+    "XYP": "PR-XY",
+    "BWP": "PR-BW",
+    "HSP": "PR-HS",
+    "DPP": "PR-DP",
+    "NP": "PR-N",
+    "WP": "PR-W",
 }
 
 ACE_SPECS = {
