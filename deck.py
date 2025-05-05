@@ -143,7 +143,65 @@ class DeckLike(metaclass=abc.ABCMeta):
     
     def __ge__(self, other: DeckLike):
         return self.id >= other.id
+    
+def is_special_darkness_metal(card_name, set_code, number):
+    """
+    Checks if a card is Special Darkness or Special Metal Energy.
 
+    Parameters
+    ----------
+    card_name : str
+        The card's name.
+    set_code : str
+        The card's set code.
+    number : int
+        The card's collector number.
+
+    Returns
+    -------
+    bool
+        True if the provided card name, set, and number refer to Special Darkness Energy or Special Metal Energy; False otherwise
+    """
+    if card_name == "Darkness Energy" \
+        and (set_code, number) in {
+            ("N1", 104),
+            ("EX", 158),
+            ("AQ", 142),
+            ("RS", 93),
+            ("EM", 86),
+            ("UF", 96),
+            ("DS", 103),
+            ("HP", 94),
+            ("PK", 87),
+            ("MT", 119),
+            ("SW", 129),
+            ("MD", 93),
+            ("RR", 99),
+            ("UD", 79),
+            ("CL", 86),
+        }:
+        return True
+    elif card_name == "Metal Energy" \
+        and (set_code, number) in {
+            ("N1", 19),
+            ("EX", 159),
+            ("AQ", 143),
+            ("RS", 94),
+            ("EM", 88),
+            ("UF", 97),
+            ("DS", 107),
+            ("HP", 95),
+            ("PK", 88),
+            ("MT", 120),
+            ("SW", 130),
+            ("MD", 95),
+            ("RR", 100),
+            ("UD", 80),
+            ("CL", 87),
+        }:
+        return True
+    else:
+        return False
 
 class Deck(DeckLike):
     """
@@ -241,7 +299,7 @@ class Deck(DeckLike):
         """
         Loads a Limitless API-format decklist into this Deck.
 
-        Will normalize Trainer and Energy card names during import. Currently does not handle Special Darkness Energy or Special Metal Energy correctly, so don't use on retro decklists.
+        Will normalize Trainer and Energy card names during import.
 
         Parameters
         ----------
@@ -266,7 +324,9 @@ class Deck(DeckLike):
 
         for card in decklist.get("energy"):
             card_name = card["name"]
-            if card_name in BASIC_ENERGY_NAMES:
+            if is_special_darkness_metal(card["name"], card["set"], int(card["number"])):
+                card_name = "Special " + card_name
+            elif card_name in BASIC_ENERGY_NAMES:
                 card_name = "Basic " + card_name
             decklist_dict[card_name] = card.get("count")
 
