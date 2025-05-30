@@ -777,7 +777,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         print(f"Loading cluster hierarchy from {filename}...")
         with open(filename, "rb") as file:
             pickler = pickle.Unpickler(file)
-            (self.cluster_hierarchy, self.clusters, self.rogue_decks) = pickler.load()
+            (self.clusters, self.rogue_decks) = pickler.load()
 
     def k_similarity_push(self, contents_hash, similarity: tuple[float, str]):
         """
@@ -1106,7 +1106,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         print(f"Saving archetypes to {filename}...")
         with open(filename, "wb") as file:
             pickler = pickle.Pickler(file)
-            pickler.dump((self.cluster_hierarchy, self.clusters, self.rogue_decks))
+            pickler.dump((self.clusters, self.rogue_decks))
 
     def rename_archetypes(self):
         super().rename_archetypes()
@@ -1115,7 +1115,7 @@ class HDBSCANClusterEngine(ClusterEngine):
         print(f"Saving archetypes to {filename}...")
         with open(filename, "wb") as file:
             pickler = pickle.Pickler(file)
-            pickler.dump((self.cluster_hierarchy, self.clusters, self.rogue_decks))
+            pickler.dump((self.clusters, self.rogue_decks))
 
     def print_cluster_tree(self):
         filename = f"reports/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_cluster_tree.txt"
