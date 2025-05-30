@@ -32,7 +32,8 @@ FORMAT_DATES = {
     "BRS-PRE": (datetime(2025,  1, 16, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2025,  3, 27, 17, 0, 0, 0, tzinfo=timezone.utc)),
 
     # "standard_g-i":
-    # "SVI-JTG": (datetime(2025,  3, 27, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc))
+    "SVI-JTG": (datetime(2025,  3, 27, 17, 0, 0, 0, tzinfo=timezone.utc), datetime(2025,  5, 29, 17, 0, 0, 0, tzinfo=timezone.utc)),
+    "SVI-DRI": (datetime(2025,  5, 29, 17, 0, 0, 0, tzinfo=timezone.utc), datetime.now(tz=timezone.utc)),
 }
 
 
