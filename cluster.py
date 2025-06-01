@@ -119,6 +119,7 @@ class ClusterHierarchy():
         
         self.selected_clusters: list[deck.DeckCluster] = []
         self.rogue_decks: set[deck.DeckLike] = set(data)
+        self.rogue_clusters: set[deck.DeckCluster] = set()
 
     def build_hierarchy(self):
         """Produces a hierarchical cluster tree out of the linkage data."""
@@ -214,7 +215,7 @@ class ClusterHierarchy():
                     
                     if isinstance(child2, ClusterHierarchyNode):
                         child2.deck_cluster = functools.reduce(lambda x,y: x+y, child2.contents)
-                        self.selected_clusters.append(child2.deck_cluster)
+                        self.rogue_clusters.add(child2.deck_cluster)
                     else:
                         self.rogue_decks.add(child2)
                 case 1:
@@ -223,7 +224,7 @@ class ClusterHierarchy():
                     
                     if isinstance(child1, ClusterHierarchyNode):
                         child1.deck_cluster = functools.reduce(lambda x,y: x+y, child1.contents)
-                        self.selected_clusters.append(child1.deck_cluster)
+                        self.rogue_clusters.add(child1.deck_cluster)
                     else:
                         self.rogue_decks.add(child1)
                 case 0:
@@ -232,13 +233,13 @@ class ClusterHierarchy():
                     
                     if isinstance(child1, ClusterHierarchyNode):
                         child1.deck_cluster = functools.reduce(lambda x,y: x+y, child1.contents)
-                        self.selected_clusters.append(child1.deck_cluster)
+                        self.rogue_clusters.add(child1.deck_cluster)
                     else:
                         self.rogue_decks.add(child1)
                     
                     if isinstance(child2, ClusterHierarchyNode):
                         child2.deck_cluster = functools.reduce(lambda x,y: x+y, child2.contents)
-                        self.selected_clusters.append(child2.deck_cluster)
+                        self.rogue_clusters.add(child2.deck_cluster)
                     else:
                         self.rogue_decks.add(child2)
                 case _:
@@ -330,7 +331,10 @@ class ClusterHierarchy():
         for c in selected_clusters:
             c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
             self.selected_clusters.append(c.deck_cluster)
-            # self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
+            self.rogue_decks = self.rogue_decks.difference(c.deck_cluster.decks)
+            self.rogue_clusters = {rc for rc in self.rogue_clusters if len(rc.decks.intersection(c.deck_cluster.decks)) == 0}
+
+        self.rogue_decks = self.rogue_decks.union(self.rogue_clusters)
 
         print("")
 
@@ -516,13 +520,16 @@ class ClusterEngine(metaclass=abc.ABCMeta):
 
         print(f"Saved archetype report to {filename}.")
 
+    def _get_num_rogue_decks(self):
+        return functools.reduce(lambda x,y:x+y, map(lambda z: z.num_decks, self.rogue_decks))
+
     def print_rogue_deck_report(self):
         """
         Prints a list of all rogue decks.
         """
         filename = f"reports/{CONFIG.get('TOURNAMENT_FORMAT_FILTER')}_rogue_decks.txt"
         with open(filename, "w") as file:
-            file.write(f"Rogue Deck Report: {len(self.rogue_decks)} rogue archetypes\n\n")
+            file.write(f"Rogue Deck Report: {self._get_num_rogue_decks()} rogue archetypes\n\n")
             for decklike in sorted(self.rogue_decks, key=lambda a: a.num_decks, reverse=True):
                 longest_card_name_length = max(len(max(decklike.decklist.keys(), key=len)), len("Card Name"))
                 longest_table_line_length = longest_card_name_length + len(" | Weight | Count")
@@ -562,7 +569,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
                 archetype_count += 1
                 file.write(f"Archetype {str(archetype_count).rjust(archetype_count_length)}: {archetype.title.ljust(longest_archetype_name_length)} ({str(archetype.num_decks).rjust(longest_num_decks_length)} decks | {str(round(archetype.num_decks / len(self.original_decks) * 100, 1)).rjust(4)}%)\n")
 
-            file.write(f"\n\nRogue deck percentage: {round(len(self.rogue_decks) / len(self.original_decks) * 100, 1)} %\n")
+            file.write(f"\n\nRogue deck percentage: {round(self._get_num_rogue_decks() / len(self.original_decks) * 100, 1)} %\n")
 
             min_majority_count = 0
             min_majority_share = 0
