@@ -610,8 +610,8 @@ class CardCounter:
             card in ACE_SPECS,
         )):
             return 1 / DECK_SIZE
-        elif self.get_card_type(card) == "Basic Energy":
-            return 2 / DECK_SIZE # doing the more correct 59 doesn't weight down basics enough. Archetypes probably aren't determined by energy type.
+        # elif self.get_card_type(card) == "Basic Energy":
+            # return 2 / DECK_SIZE # doing the more correct 59 doesn't weight down basics enough. Archetypes probably aren't determined by energy type.
             #return 59/60
         else:
             return 4 / DECK_SIZE
@@ -729,6 +729,31 @@ class CardCounter:
             cards_weighted[k] = v * (1 - self.get_card_percent_of_max_usage(k))
         return Counter(cards_weighted)
 
+    def weight_cards_by_max_possible_usage_adjusted(self, cards: Counter[str, int]) -> Counter[str, float]:
+        """
+        Adjusts the value of each card in `cards` by reducing the value of more-included cards.
+
+        Adjusted from the previous version in a few ways:
+        * The count of Energy cards is scaled before being used. This is to reduce the chance that a deck becomes highly defined by large counts of Energy (e.g. Ceruledge ex decks)
+
+        Parameters
+        ----------
+        cards : collections.Counter[str, int]
+            A Counter collection of card names to counts, most likely a decklist.
+        
+        Returns
+        -------
+        collections.Counter[str, float]
+            A Counter with the same keys, but with values reduced more for more popular cards.
+        """
+        cards_weighted: Counter[str, float] = {}
+        for k, v in cards.items():
+            if self.get_card_type(k) == "Basic Energy":
+                cards_weighted[k] = (v**(2/3)) * (1 - self.get_card_percent_of_max_usage(k))
+            else:
+                cards_weighted[k] = v * (1 - self.get_card_percent_of_max_usage(k))
+        return Counter(cards_weighted)
+
     def get_deck_Jaccard(_self, deck1: DeckLike, deck2: DeckLike) -> float:
         """
         Returns the Jaccard index of two decks.
@@ -793,7 +818,30 @@ class CardCounter:
             self.weight_cards_by_max_possible_usage(overlap).total()
             / self.weight_cards_by_max_possible_usage(deck1.decklist + deck2.decklist).total()
         )
+    
+    def get_deck_max_possible_inclusion_adjusted_weighted_Jaccard(self, deck1: DeckLike, deck2: DeckLike) -> float:
+        """
+        Returns Jaccard index of two decks where both decks are adjusted for card inclusion first and then for Energy.
 
+        Cards used in a larger number of decks will be considered less when comparing the similarity of the two decks.
+        This value is 0.5 when both decks are identical and 0 when they have no cards in common.
+
+        Parameters
+        ----------
+        deck1, deck2 : Deck
+            The two decks to compare.
+                
+        Returns
+        -------
+        float
+            The inclusion-weighted Jaccard index of the decks. Ranges from [0.0, 0.5]
+        """
+        overlap = deck1.decklist & deck2.decklist
+        return (
+            self.weight_cards_by_max_possible_usage_adjusted(overlap).total()
+            / self.weight_cards_by_max_possible_usage_adjusted(deck1.decklist + deck2.decklist).total()
+        )
+        
     def get_card_type(_self, card: str) -> str:
         """
         Returns a card's type based on its name. This is to avoid calling the Limitless API to check.

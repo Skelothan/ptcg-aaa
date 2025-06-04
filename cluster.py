@@ -321,7 +321,7 @@ class ClusterHierarchy():
         # TODO: make the weighting function configurable
         # for c in all_sets:
         #     c.deck_cluster = functools.reduce(lambda x,y: x+y, c.contents)
-        #     c.cohesion = sum([card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(c.deck_cluster, d) for d in c.deck_cluster.decks]) / len(c.deck_cluster.decks)
+        #     c.cohesion = sum([card_counter.get_deck_max_possible_inclusion_adjusted_weighted_Jaccard(c.deck_cluster, d) for d in c.deck_cluster.decks]) / len(c.deck_cluster.decks)
 
         selected_clusters = all_sets - self.condensed_tree.keys()
 
@@ -417,7 +417,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
                 output.put(None, block=True)
                 break
             d1, d2 = pair
-            similarity = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
+            similarity = self.card_counter.get_deck_max_possible_inclusion_adjusted_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
             output.put(((min(d1.id, d2.id), max(d1.id, d2.id)), similarity), block=True)
 
     def _build_initial_similarity_matrix(self):
@@ -471,7 +471,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
 
             print(f"{'Card Name'.ljust(longest_card_name_length)} | {'Weight'} | {'Avg. count'}")
             print(f"{'-' * longest_card_name_length} | {'------'} | {'----------'}")
-            archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
+            archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage_adjusted(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
 
             i = 0
             for card, count in archetype_cards:
@@ -503,13 +503,13 @@ class ClusterEngine(metaclass=abc.ABCMeta):
                 archetype_count += 1
                 longest_card_name_length = max(len(max(archetype.decklist.keys(), key=len)), len("Card Name"))
                 longest_table_line_length = longest_card_name_length + len(" | Weight | Avg. count")
-                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
+                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage_adjusted(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
 
                 file.write(f"Archetype {archetype_count}: {archetype.title} ({archetype.num_decks} decks | {round(archetype.num_decks / len(self.original_decks) * 100, 1)}%)\n")
                 file.write("-" * longest_table_line_length + "\n")
 
                 longest_card_name_length = max(len(max(archetype.decklist.keys(), key=len)), len("Card Name"))
-                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
+                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage_adjusted(archetype.decklist).items(), key=lambda p: p[1], reverse=True)
                 
                 file.write(f"{'Card Name'.ljust(longest_card_name_length)} | {'Weight'} | {'Avg. count'}\n")
                 file.write(f"{'-' * longest_card_name_length} | {'------'} | {'----------'}\n")
@@ -533,7 +533,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
             for decklike in sorted(self.rogue_decks, key=lambda a: a.num_decks, reverse=True):
                 longest_card_name_length = max(len(max(decklike.decklist.keys(), key=len)), len("Card Name"))
                 longest_table_line_length = longest_card_name_length + len(" | Weight | Count")
-                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(decklike.decklist).items(), key=lambda p: p[1], reverse=True)
+                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage_adjusted(decklike.decklist).items(), key=lambda p: p[1], reverse=True)
 
                 if isinstance(decklike, deck.DeckCluster):
                     file.write(f"{decklike.title} ({decklike.num_decks} decks | {round(decklike.num_decks / len(self.original_decks) * 100, 1)}%)\n")
@@ -542,7 +542,7 @@ class ClusterEngine(metaclass=abc.ABCMeta):
                 file.write("-" * longest_table_line_length + "\n")
 
                 longest_card_name_length = max(len(max(decklike.decklist.keys(), key=len)), len("Card Name"))
-                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage(decklike.decklist).items(), key=lambda p: p[1], reverse=True)
+                archetype_cards = sorted(self.card_counter.weight_cards_by_max_possible_usage_adjusted(decklike.decklist).items(), key=lambda p: p[1], reverse=True)
                 
                 file.write(f"{'Card Name'.ljust(longest_card_name_length)} | {'Weight'} | {'Count'}\n")
                 file.write(f"{'-' * longest_card_name_length} | {'------'} | {'-----'}\n")
@@ -680,7 +680,7 @@ class UPGMAClusterEngine(ClusterEngine):
                         self.similarities[output[0]] = output[1]
             else:
                 for dac_id, dac_deck in self.decks_and_clusters.items():
-                    self.similarities[(cluster.id, dac_id)] = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(cluster, dac_deck) # TODO: make the function configurable
+                    self.similarities[(cluster.id, dac_id)] = self.card_counter.get_deck_max_possible_inclusion_adjusted_weighted_Jaccard(cluster, dac_deck) # TODO: make the function configurable
 
             # Add the new cluster to the deck list
             self.decks_and_clusters[cluster.id] = cluster
@@ -761,7 +761,7 @@ class HDBSCANClusterEngine(ClusterEngine):
                 break
             d1, d2 = pair
 
-            similarity = self.card_counter.get_deck_max_possible_inclusion_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
+            similarity = self.card_counter.get_deck_max_possible_inclusion_adjusted_weighted_Jaccard(d1, d2) # TODO: make function choice configurable
 
             output.put(((min(d1.contents_hash, d2.contents_hash), max(d1.contents_hash, d2.contents_hash)), similarity), block=True)
 
